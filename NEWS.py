@@ -708,7 +708,7 @@ def render_alerts_panel():
         # Create scrollable container with HTML/CSS
         alerts_html = '<div style="height: 400px; overflow-y: auto; border: 1px solid rgba(121,192,255,.2); padding: 12px; border-radius: 6px; background: rgba(20, 20, 30, 0.5);">'
         
-        for a in feed[:800]:  # Show all, but let scroll handle display
+        for a in reversed(feed[:800]):  # Reverse order - newest on top
             title = a.get("msg", "").replace("[ozytarget.com] ", "").strip()
             link = a.get("link", "")
             alert_ts = a.get("ts", 0)
