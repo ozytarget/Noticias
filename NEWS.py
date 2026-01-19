@@ -333,6 +333,7 @@ def db_connect():
             pass
 
     conn = sqlite3.connect("news.db", check_same_thread=False)
+    conn.isolation_level = None  # Enable autocommit mode for SQLite
     return "sqlite", conn
 
 
@@ -412,11 +413,16 @@ def db_prune_old():
     kind, conn = get_db()
     cutoff_ts = time.time() - (RETENTION_DAYS * 86400.0)
     cur = conn.cursor()
-    if kind == "postgres":
-        cur.execute("DELETE FROM news_items WHERE ts < %s;", (cutoff_ts,))
-    else:
-        cur.execute("DELETE FROM news_items WHERE ts < ?;", (cutoff_ts,))
-    conn.commit()
+    try:
+        if kind == "postgres":
+            cur.execute("DELETE FROM news_items WHERE ts < %s;", (cutoff_ts,))
+        else:
+            cur.execute("DELETE FROM news_items WHERE ts < ?;", (cutoff_ts,))
+        conn.commit()
+    except Exception as e:
+        print(f"DB prune error: {e}")
+        if kind == "postgres":
+            conn.rollback()
 
 
 def db_upsert_many(items: list[dict]):
@@ -459,7 +465,12 @@ def db_upsert_many(items: list[dict]):
             VALUES (?,?,?,?,?,?,?,?,?,?);
         """, rows)
 
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception as e:
+        print(f"DB commit error in upsert: {e}")
+        if kind == "postgres":
+            conn.rollback()
     db_prune_old()
 
 
@@ -547,7 +558,12 @@ def db_save_digest(content: dict, window_hours: int):
             (ts, window_hours, digest_hour, payload),
         )
 
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception as e:
+        print(f"DB commit error in digest: {e}")
+        if kind == "postgres":
+            conn.rollback()
 
 
 # =========================
@@ -630,7 +646,12 @@ def db_mark_alert_seen(item: dict, alert_hash: str):
             VALUES (?,?,?,?,?,?);
         """, (alert_hash, ts, title, link, domain, score))
 
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception as e:
+        print(f"DB commit error in mark_alert: {e}")
+        if kind == "postgres":
+            conn.rollback()
 
 
 def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
