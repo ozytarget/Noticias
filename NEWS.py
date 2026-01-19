@@ -14,13 +14,9 @@ from streamlit_autorefresh import st_autorefresh
 
 
 # =========================
-# CONFIG (REAL-TIME SAFE)
+# CONFIG
 # =========================
-AUTO_REFRESH_SECONDS = 30          # keep display label compatibility
-UI_REFRESH_SECONDS = 30            # Streamlit rerun cadence
-FETCH_INTERVAL_SECONDS = 30        # real network fetch cadence
-FETCH_CACHE_TTL_SECONDS = 10       # short cache to avoid stale results
-
+AUTO_REFRESH_SECONDS = 35
 MAX_ARTICLE_AGE_HOURS = 24
 
 RETENTION_DAYS = 30
@@ -28,15 +24,7 @@ AI_DIGEST_EVERY_SECONDS = 3600
 AI_WINDOW_HOURS_RECENT = 24
 AI_CONTEXT_DAYS = 30
 
-DEFAULT_KEYWORDS = [
-    "SPX", "SPY", "QQQ", "FOMC", "Fed", "Powell",
-    "Treasury", "U.S. Treasury", "yields", "2Y yield", "10Y yield", "yield curve",
-    "inflation", "CPI", "PCE", "NFP", "jobless claims",
-    "options", "0DTE", "gamma", "dealer gamma",
-    "VIX", "MOVE", "volatility",
-    "liquidity", "QT", "TGA", "RRP", "repo", "SOFR",
-    "credit spreads",
-]
+DEFAULT_KEYWORDS = ["SPX", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "EARNINGS", "ENERGY", "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
@@ -146,7 +134,7 @@ input[data-testid="TextInput"] { background-color: rgba(255, 255, 0, 0.2) !impor
     unsafe_allow_html=True,
 )
 
-st_autorefresh(interval=UI_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
+st_autorefresh(interval=AUTO_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
 
 
 # =========================
@@ -154,14 +142,10 @@ st_autorefresh(interval=UI_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
 # =========================
 if "latest_news" not in st.session_state:
     st.session_state["latest_news"] = []
+if "last_fetch_ts" not in st.session_state:
+    st.session_state["last_fetch_ts"] = 0.0
 if "auto_keywords" not in st.session_state:
     st.session_state["auto_keywords"] = DEFAULT_KEYWORDS
-
-# Fetch timing state (separate from UI)
-if "last_fetch_done_ts" not in st.session_state:
-    st.session_state["last_fetch_done_ts"] = 0.0
-if "fetch_in_flight" not in st.session_state:
-    st.session_state["fetch_in_flight"] = False
 
 
 # =========================
@@ -203,6 +187,46 @@ def count_hits(text: str, keywords: list[str]) -> int:
         if re.search(r"\b" + re.escape(k) + r"\b", s):
             hits += 1
     return hits
+
+
+def score_to_bg_style(score: int, user_kw_hits: int = 0) -> str:
+    """
+    Score bands for visual priority:
+    - 🔥 BREAKING: >=80 → red strong (0.35)
+    - 🚨 HIGH: 60-79 → red medium (0.22)
+    - ⚠️ MED: 40-59 → orange (0.22)
+    - 👀 WATCH: 20-39 → yellow (0.18)
+    - NEUTRAL: 15-19 → blue subtle (0.10)
+    - LOW: <15 → normal or soft yellow if user keywords
+    Priority: score > user keyword hits.
+    """
+    s = int(score)
+
+    # 🔥 BREAKING
+    if s >= 80:
+        return "background-color: rgba(255, 0, 0, 0.35) !important;"
+
+    # 🚨 HIGH
+    if s >= 60:
+        return "background-color: rgba(255, 0, 0, 0.22) !important;"
+
+    # ⚠️ MED (orange)
+    if s >= 40:
+        return "background-color: rgba(255, 140, 0, 0.22) !important;"
+
+    # 👀 WATCH (yellow)
+    if s >= 20:
+        return "background-color: rgba(255, 255, 0, 0.18) !important;"
+
+    # NEUTRAL (blue tint)
+    if s >= 15:
+        return "background-color: rgba(121, 192, 255, 0.10) !important;"
+
+    # LOW/NOISE: only highlight softly if user's keywords match
+    if user_kw_hits > 0:
+        return "background-color: rgba(255, 255, 0, 0.10) !important;"
+
+    return "background-color: rgba(20, 20, 30, 0.92) !important;"
 
 
 def dedupe(items: list[dict]) -> list[dict]:
@@ -1361,7 +1385,7 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
 # =========================
 feed_box = st.container()
 
-@st.cache_data(ttl=FETCH_CACHE_TTL_SECONDS, show_spinner=False)
+@st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
 def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, cache_buster: int = 0) -> list[dict]:
     # IMPORTANT:
     # "cache_buster" MUST be used inside the function so Streamlit cache key changes.
@@ -1418,14 +1442,13 @@ with colB:
     flush_cache = st.button("🧹 Clear Cache", use_container_width=True, key="flush_cache_now")
 with colC2:
     st.markdown(
-        f"<div class='small'>Auto-refresh {UI_REFRESH_SECONDS}s | Fetch {FETCH_INTERVAL_SECONDS}s | Cache {FETCH_CACHE_TTL_SECONDS}s | Cutoff {MAX_ARTICLE_AGE_HOURS}h | Retention {RETENTION_DAYS}d | AI hourly</div>",
-        unsafe_allow_html=True,
+        f"<div class='small'>Auto-refresh {AUTO_REFRESH_SECONDS}s | Cutoff {MAX_ARTICLE_AGE_HOURS}h | Retention {RETENTION_DAYS}d | AI hourly</div>",
+        unsafe_allow_html=True
     )
 
 if flush_cache:
     st.cache_data.clear()
-    st.session_state["last_fetch_done_ts"] = 0.0
-    st.session_state["fetch_in_flight"] = False
+    st.session_state["last_fetch_ts"] = 0.0
     st.success("✅ Cache flushed")
 
 
@@ -1528,50 +1551,28 @@ if st.session_state.get("custom_ai_result"):
 
 
 # =========================
-# AUTO FETCH + STORE (NO FLICKER + REAL FETCH)
+# AUTO FETCH + STORE
 # =========================
 now_ts = time.time()
-elapsed = now_ts - float(st.session_state.get("last_fetch_done_ts", 0.0))
-
-# fetch decision: based on last DONE fetch, not UI rerun
-should_fetch = bool(force_refresh) or (not st.session_state["fetch_in_flight"] and elapsed >= FETCH_INTERVAL_SECONDS)
-
-scan_status = st.empty()
+should_fetch = force_refresh or ((now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS)
 
 if should_fetch:
-    st.session_state["fetch_in_flight"] = True
-    scan_status.caption("Scanning sources… (UI stable)")
-
-    try:
-        # Auto refresh must also bust cache:
-        # bucket changes every FETCH_INTERVAL_SECONDS, so each fetch window forces a fresh call.
-        bucket = int(now_ts // FETCH_INTERVAL_SECONDS)
-        buster = int(now_ts) if force_refresh else bucket
-
+    with st.spinner("Auto-fetching latest news..."):
+        buster = int(now_ts) if force_refresh else 0
         fresh = fetch_all_sources_cached(
             keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
             min_kw=min_kw_hits,
             max_noise=max_noise_hits,
             cache_buster=buster,
         )
-
         st.session_state["latest_news"] = fresh
-        st.session_state["last_fetch_done_ts"] = time.time()
+        st.session_state["last_fetch_ts"] = now_ts
 
         try:
             db_upsert_many(fresh)
             alert_on_new_items(fresh, max_alerts_per_run=6)
         except Exception as e:
-            scan_status.warning(f"DB write error: {type(e).__name__}: {str(e)[:160]}")
-
-        scan_status.markdown(f"**✅ Updated:** {len(fresh)} headlines")
-    except Exception as e:
-        scan_status.error(f"Scan error: {type(e).__name__}: {str(e)[:180]}")
-    finally:
-        st.session_state["fetch_in_flight"] = False
-else:
-    secs_left = max(0, int(FETCH_INTERVAL_SECONDS - elapsed))
-    scan_status.caption(f"Idle — next fetch in ~{secs_left}s (showing last headlines)")
+            st.warning(f"DB write error: {e}")
 
 
 # =========================
@@ -1666,15 +1667,8 @@ with feed_box:
             blob = f"{title} {summary}"
             user_kw_hits = count_hits(blob, st.session_state.get("auto_keywords", []))
             
-            # Color priority: score >= 12 (red) > score > 8 (yellow) > user keywords (yellow) > none (transparent)
-            if score >= 12:
-                bg_style = "background-color: rgba(255, 0, 0, 0.2) !important;"  # Red semitransparent
-            elif score > 8:
-                bg_style = "background-color: rgba(255, 255, 0, 0.2) !important;"  # Yellow semitransparent
-            elif user_kw_hits > 0:
-                bg_style = "background-color: rgba(255, 255, 0, 0.2) !important;"  # Yellow semitransparent for user keywords
-            else:
-                bg_style = "background-color: rgba(20, 20, 30, 0.92) !important;"  # Default dark background
+            # Apply color based on score bands (BREAKING > HIGH > MED > WATCH > NEUTRAL > LOW)
+            bg_style = score_to_bg_style(score, user_kw_hits=user_kw_hits)
             st.markdown(
                 f"""
 <div class="card" style="{bg_style}">
