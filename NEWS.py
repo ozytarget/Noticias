@@ -1383,7 +1383,6 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
 # =========================
 # PIPELINE (cached)
 # =========================
-feed_box = st.container()
 
 @st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
 def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, cache_buster: int = 0) -> list[dict]:
@@ -1548,6 +1547,12 @@ if st.session_state.get("custom_ai_result"):
     st.markdown("---")
     st.markdown("### 🤖 pro-analizer")
     st.text(st.session_state["custom_ai_result"])
+
+
+# =========================
+# FEED CONTAINER (para render)
+# =========================
+feed_box = st.container()
 
 
 # =========================
