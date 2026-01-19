@@ -673,7 +673,7 @@ def render_alerts_panel():
     """
     Optional UI panel (last alerts). Call where you want in RENDER.
     NEW badge disappears after 60 seconds.
-    Only link is clickable - no source shown.
+    Link is clickable but text appears normal (camuflaged).
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
@@ -690,7 +690,11 @@ def render_alerts_panel():
             new_badge = "🆕 NEW" if age_sec < 60 else ""
             
             if link:
-                st.markdown(f"- {new_badge} [{title}]({link})")
+                # Link is clickable but text appears normal (no blue/underline)
+                st.markdown(
+                    f'- {new_badge} <a href="{link}" target="_blank" style="color: inherit; text-decoration: none; cursor: pointer;">{title}</a>',
+                    unsafe_allow_html=True
+                )
             else:
                 st.markdown(f"- {new_badge} {title}")
 
