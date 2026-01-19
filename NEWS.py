@@ -656,7 +656,7 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
         score = int(it.get("_score") or 0)
         link = (it.get("link") or "").strip()
 
-        msg = f"NEW: [{dom}] score={score} — {title[:140]}"
+        msg = f"[ozytarget.com] {title[:140]}"
         st.toast(msg)
 
         st.session_state["alerts_feed"].insert(0, {
@@ -672,18 +672,27 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
 def render_alerts_panel():
     """
     Optional UI panel (last alerts). Call where you want in RENDER.
+    NEW badge disappears after 60 seconds.
+    Only link is clickable - no source shown.
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
         return
+    now_ts = time.time()
     with st.expander("🚨 Alerts (new headlines)", expanded=False):
         for a in feed[:12]:
-            msg = a.get("msg", "")
+            title = a.get("msg", "").replace("[ozytarget.com] ", "").strip()
             link = a.get("link", "")
+            alert_ts = a.get("ts", 0)
+            age_sec = now_ts - alert_ts
+            
+            # Show "NEW" badge only if < 60 seconds
+            new_badge = "🆕 NEW" if age_sec < 60 else ""
+            
             if link:
-                st.markdown(f"- {msg}  ([open]({link}))")
+                st.markdown(f"- {new_badge} [{title}]({link})")
             else:
-                st.markdown(f"- {msg}")
+                st.markdown(f"- {new_badge} {title}")
 
 
 # =========================
