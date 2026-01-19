@@ -728,9 +728,9 @@ def render_alerts_panel():
             
             if link:
                 # Link is invisible but clickable - text appears normal with score-based color
-                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: {text_color}; text-decoration: none;">- {new_badge} {title} <span style="color: #8b949e; font-size: 11px;">({article_time})</span></a></div>'
+                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: {text_color}; text-decoration: none;"><span style="color: #8b949e; font-size: 11px;">({article_time})</span> - {new_badge} {title}</a></div>'
             else:
-                alerts_html += f'<div style="margin: 6px 0; color: {text_color};">- {new_badge} {title} <span style="color: #8b949e; font-size: 11px;">({article_time})</span></div>'
+                alerts_html += f'<div style="margin: 6px 0; color: {text_color};"><span style="color: #8b949e; font-size: 11px;">({article_time})</span> - {new_badge} {title}</div>'
         
         alerts_html += '</div>'
         st.markdown(alerts_html, unsafe_allow_html=True)
