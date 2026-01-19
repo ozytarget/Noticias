@@ -50,19 +50,55 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # FILTERS
 # =========================
 INSTITUTIONAL_KEYWORDS = [
+    # Macro USA (datos que mueven mercado)
     "fomc", "fed", "federal reserve", "powell", "minutes", "dot plot",
     "forward guidance", "terminal rate", "rate path", "restrictive", "accommodative",
     "balance sheet", "runoff", "qt", "qe", "ecb", "boj", "boe",
-    "cpi", "ppi", "pce", "core pce", "inflation", "jobs report", "nonfarm payrolls", "nfp",
-    "jobless claims", "unemployment", "gdp", "retail sales", "ism", "pmi",
-    "treasury", "auction", "bid-to-cover", "bid to cover", "tail",
-    "2-year", "2 year", "10-year", "10 year", "real yield", "real yields",
-    "yields", "yield curve", "term premium", "curve steepening", "curve flattening",
-    "rebalancing", "asset allocation", "positioning", "cta", "risk parity",
-    "etf inflows", "etf outflows", "creations", "redemptions",
-    "options", "open interest", "gamma", "gamma exposure", "negative gamma", "positive gamma",
-    "dealer hedging", "delta hedging", "0dte", "implied volatility", "skew", "vix",
-    "liquidity", "funding stress", "financial conditions", "repo", "sofr", "stress",
+    "cpi", "core cpi", "pce", "core pce",
+    "nonfarm payrolls", "nfp", "payrolls",
+    "jobless claims", "unemployment", "unemployment rate",
+    "ism", "pmi", "retail sales", "gdp",
+    "consumer sentiment", "jolts", "wage growth",
+    
+    # Fed / Política monetaria
+    "rate cuts", "rate hike", "rate hiking",
+    "terminal rate", "restrictive policy", "accommodative policy",
+    "financial conditions", "financial stability",
+    
+    # Treasury / Liquidez
+    "treasury auction", "refundings", "bid-to-cover",
+    "bid to cover", "tail",
+    "tga", "rrp", "on rrp", "repo", "sofr",
+    "bill issuance", "coupon issuance",
+    "yield curve", "2-year", "2 year", "10-year", "10 year",
+    "real yield", "real yields",
+    "yields",
+    
+    # Volatilidad / Derivados
+    "vix", "vvix", "skew",
+    "0dte", "opex", "monthly opex",
+    "open interest", "dealer hedging", "delta hedging",
+    "gamma exposure", "put wall", "call wall",
+    
+    # Crédito / Riesgo sistémico
+    "credit spreads", "high yield", "investment grade",
+    "cds", "funding stress", "liquidity stress",
+    "bank stress", "regional banks", "commercial real estate", "cre",
+    
+    # FX / Global macro
+    "usdjpy", "yen", "jgb",
+    "dxy", "dollar", "eurusd",
+    "cnh", "yuan", "pboc",
+    "ecb", "boe", "rba",
+    
+    # Big Tech / AI beta
+    "nvda", "aapl", "msft", "amzn", "meta", "googl",
+    "ai", "artificial intelligence", "data center", "semis", "chips", "semiconductor",
+    "power demand", "grid", "nuclear", "natural gas",
+    
+    # Energía
+    "wti", "brent", "opec", "spr",
+    "lng", "geopolitical risk", "strait of hormuz",
 ]
 
 NOISE_KEYWORDS = [
@@ -103,12 +139,39 @@ WIRE_PHRASES = [
 ]
 
 HIGH_IMPACT_TRIGGERS = [
-    "cpi", "core cpi", "ppi", "pce", "core pce",
+    # Macro USA - High Impact
+    "cpi", "core cpi", "pce", "core pce",
     "nonfarm payrolls", "nfp", "jobless claims", "unemployment rate",
+    "ism", "pmi", "retail sales", "gdp",
+    "consumer sentiment", "jolts", "wage growth",
+    
+    # Fed / Política monetaria - High Impact
     "fomc", "fed minutes", "dot plot", "powell",
-    "auction", "refunding", "bid-to-cover", "tail",
-    "2-year", "10-year", "real yield", "sofr", "repo", "qt",
-    "vix", "0dte", "gamma", "dealer hedging", "skew",
+    "rate cuts", "rate hike", "terminal rate",
+    
+    # Treasury / Liquidez - High Impact
+    "treasury auction", "refundings", "bid-to-cover", "tail",
+    "tga", "rrp", "on rrp", "repo", "sofr",
+    "yield curve", "2-year", "10-year", "real yields",
+    
+    # Volatilidad - High Impact
+    "vix", "vvix", "skew",
+    "0dte", "opex", "gamma", "dealer hedging",
+    
+    # Crédito / Riesgo - High Impact
+    "credit spreads", "funding stress", "liquidity stress",
+    "bank stress", "regional banks",
+    
+    # FX / Global - High Impact
+    "usdjpy", "yen", "jgb", "dxy", "eurusd",
+    "pboc", "ecb", "boe", "boj",
+    
+    # Big Tech / AI Beta
+    "nvda", "aapl", "msft", "amzn", "meta", "googl",
+    "ai", "data center", "semis", "chips",
+    
+    # Energía - High Impact
+    "wti", "brent", "opec", "geopolitical risk",
 ]
 
 NEGATIVE_KEYWORDS = [
