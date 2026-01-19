@@ -667,6 +667,7 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
             "ts": time.time(),
             "msg": msg,
             "link": link,
+            "score": score,
         })
         st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:500]
 
@@ -712,16 +713,20 @@ def render_alerts_panel():
             msg = a.get("msg", "")
             link = a.get("link", "")
             ts = a.get("ts", time.time())
+            score = int(a.get("score", 0))
             time_label = format_alert_time(ts)
             
             # Replace "NEW:" with time label
             msg_updated = msg.replace("NEW:", time_label)
             
+            # Color background based on score
+            bg_color = "rgba(255, 0, 0, 0.1)" if score >= 60 else "transparent"
+            
             if link:
                 # Link is invisible but clickable - entire text is the link
-                alerts_html += f'<p><a href="{link}" target="_blank" style="text-decoration: none; color: inherit;"><strong>{msg_updated}</strong></a></p>'
+                alerts_html += f'<p style="background-color: {bg_color}; padding: 8px; border-radius: 4px;"><a href="{link}" target="_blank" style="text-decoration: none; color: inherit;"><strong>{msg_updated}</strong></a></p>'
             else:
-                alerts_html += f'<p><strong>{msg_updated}</strong></p>'
+                alerts_html += f'<p style="background-color: {bg_color}; padding: 8px; border-radius: 4px;"><strong>{msg_updated}</strong></p>'
         
         alerts_html += """
         </div>
