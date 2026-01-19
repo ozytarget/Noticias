@@ -637,20 +637,20 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
     """
     Fires a Streamlit toast for each NEW item (deduped by DB).
     Also stores a small feed in session_state to display in UI if desired.
-    ONLY ALERTS ON LIVE NEWS: articles published in last 10 minutes.
+    ONLY ALERTS ON LIVE NEWS: articles published in last 60 minutes.
     """
     if "alerts_feed" not in st.session_state:
         st.session_state["alerts_feed"] = []
 
     now_ts = time.time()
-    LIVE_WINDOW_MINUTES = 10  # Only alert on news < 10 minutes old
+    LIVE_WINDOW_MINUTES = 60  # Only alert on news < 60 minutes old
 
     fired = 0
     for it in items:
         if fired >= max_alerts_per_run:
             break
 
-        # Filter: only LIVE articles (< 10 minutes old)
+        # Filter: only LIVE articles (< 60 minutes old)
         article_ts = it.get("_ts", 0.0)
         age_minutes = (now_ts - article_ts) / 60.0
         if age_minutes > LIVE_WINDOW_MINUTES:
