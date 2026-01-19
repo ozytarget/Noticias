@@ -657,6 +657,7 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
         dom = (it.get("_domain") or "").strip()
         score = int(it.get("_score") or 0)
         link = (it.get("link") or "").strip()
+        article_ts = it.get("_ts", 0.0)
 
         msg = f"[ozytarget.com] {title[:140]}"
         st.toast(msg)
@@ -666,6 +667,7 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
             "msg": msg,
             "link": link,
             "score": score,
+            "article_ts": article_ts,
         })
         st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:800]
 
@@ -680,6 +682,7 @@ def render_alerts_panel():
     Stores up to 800 alerts, displays with scrolldown.
     Text color matches score: Red (≥60), Yellow (40-59), White (<40).
     Link is hidden but clickable (text doesn't appear as link).
+    Shows timestamp of when news was published.
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
@@ -694,8 +697,12 @@ def render_alerts_panel():
             title = a.get("msg", "").replace("[ozytarget.com] ", "").strip()
             link = a.get("link", "")
             alert_ts = a.get("ts", 0)
+            article_ts = a.get("article_ts", 0)
             score = int(a.get("score", 0))
             age_sec = now_ts - alert_ts
+            
+            # Format article timestamp
+            article_time = time_ago(article_ts) if article_ts else "unknown"
             
             # Determine text color based on score
             if score >= 60:
@@ -710,9 +717,9 @@ def render_alerts_panel():
             
             if link:
                 # Link is invisible but clickable - text appears normal with score-based color
-                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: {text_color}; text-decoration: none;">- {new_badge} {title}</a></div>'
+                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: {text_color}; text-decoration: none;">- {new_badge} {title} <span style="color: #8b949e; font-size: 11px;">({article_time})</span></a></div>'
             else:
-                alerts_html += f'<div style="margin: 6px 0; color: {text_color};">- {new_badge} {title}</div>'
+                alerts_html += f'<div style="margin: 6px 0; color: {text_color};">- {new_badge} {title} <span style="color: #8b949e; font-size: 11px;">({article_time})</span></div>'
         
         alerts_html += '</div>'
         st.markdown(alerts_html, unsafe_allow_html=True)
