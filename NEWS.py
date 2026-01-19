@@ -714,7 +714,8 @@ def render_alerts_panel():
             msg_updated = msg.replace("NEW:", time_label)
             
             if link:
-                alerts_html += f'<p><strong>{msg_updated}</strong><br><a href="{link}" target="_blank">🔗 open article</a></p>'
+                # Link is invisible but clickable - entire text is the link
+                alerts_html += f'<p><a href="{link}" target="_blank" style="text-decoration: none; color: inherit;"><strong>{msg_updated}</strong></a></p>'
             else:
                 alerts_html += f'<p><strong>{msg_updated}</strong></p>'
         
