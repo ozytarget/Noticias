@@ -694,11 +694,13 @@ def render_alerts_panel():
     Shows timestamp of when news was published.
     """
     feed = st.session_state.get("alerts_feed") or []
-    if not feed:
-        return
     now_ts = time.time()
     
     with st.expander(f"🚨 Alerts (new headlines) — {len(feed)} total", expanded=False):
+        if not feed:
+            st.info("📭 No new alerts yet. Waiting for LIVE news...")
+            return
+        
         # Create scrollable container with HTML/CSS
         alerts_html = '<div style="height: 400px; overflow-y: auto; border: 1px solid rgba(121,192,255,.2); padding: 12px; border-radius: 6px; background: rgba(20, 20, 30, 0.5);">'
         
