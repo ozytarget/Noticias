@@ -18,15 +18,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Expose port (Railway will set PORT env var)
 EXPOSE 8501
 
 # Health check
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-# Run Streamlit
-CMD streamlit run NEWS.py \
-    --server.port=$PORT \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --logger.level=info
+# Run entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
