@@ -1,0 +1,8 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "streamlit run NEWS.py --server.port=$PORT --server.address=0.0.0.0"
+
+[env]
+PYTHONUNBUFFERED = "1"

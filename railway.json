@@ -1,0 +1,11 @@
+{
+  "buildCommand": "pip install -r requirements.txt",
+  "startCommand": "streamlit run NEWS.py --server.port=$PORT --server.address=0.0.0.0",
+  "watchPatterns": [
+    "*.py",
+    "requirements.txt"
+  ],
+  "envVariables": {
+    "PYTHONUNBUFFERED": "1"
+  }
+}

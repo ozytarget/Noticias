@@ -1,0 +1,889 @@
+# app.py
+# BLOOMBERG MODE — Institutional News Scanner (Google RSS + Bing News)
+# + AI Caption & Scenario Engine (Gemini) with 30d DB memory
+#
+# Install:
+#   pip install streamlit streamlit-autorefresh feedparser requests python-dateutil psycopg2-binary
+#
+# Env (Railway):
+#   BING_NEWS_API_KEY=...
+#   DATABASE_URL=...       (Railway Postgres; if missing -> SQLite fallback)
+#   GEMINI_API_KEY=...     (Gemini API key)
+
+import os
+import re
+import json
+import time
+import hashlib
+import sqlite3
+from datetime import timezone
+from urllib.parse import quote, urlparse
+
+import requests
+import streamlit as st
+from dateutil import parser as date_parser
+from streamlit_autorefresh import st_autorefresh
+
+
+# =========================
+# CONFIG
+# =========================
+AUTO_REFRESH_SECONDS = 30
+MAX_ARTICLE_AGE_HOURS = 24
+
+RETENTION_DAYS = 30
+AI_DIGEST_EVERY_SECONDS = 3600
+AI_WINDOW_HOURS_RECENT = 24
+AI_CONTEXT_DAYS = 30
+
+DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
+
+GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+BING_NEWS_ENDPOINT = "https://api.bing.microsoft.com/v7.0/news/search"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+    )
+}
+
+BING_API_KEY = os.getenv("BING_NEWS_API_KEY", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+
+
+# =========================
+# FILTERS
+# =========================
+INSTITUTIONAL_KEYWORDS = [
+    "fomc", "fed", "federal reserve", "powell", "minutes", "dot plot",
+    "forward guidance", "terminal rate", "rate path", "restrictive", "accommodative",
+    "balance sheet", "runoff", "qt", "qe", "ecb", "boj", "boe",
+    "cpi", "ppi", "pce", "core pce", "inflation", "jobs report", "nonfarm payrolls", "nfp",
+    "jobless claims", "unemployment", "gdp", "retail sales", "ism", "pmi",
+    "treasury", "auction", "bid-to-cover", "bid to cover", "tail",
+    "2-year", "2 year", "10-year", "10 year", "real yield", "real yields",
+    "yields", "yield curve", "term premium", "curve steepening", "curve flattening",
+    "rebalancing", "asset allocation", "positioning", "cta", "risk parity",
+    "etf inflows", "etf outflows", "creations", "redemptions",
+    "options", "open interest", "gamma", "gamma exposure", "negative gamma", "positive gamma",
+    "dealer hedging", "delta hedging", "0dte", "implied volatility", "skew", "vix",
+    "liquidity", "funding stress", "financial conditions", "repo", "sofr", "stress",
+]
+
+NOISE_KEYWORDS = [
+    "meme", "viral", "to the moon", "diamond hands", "paper hands",
+    "influencer", "hype", "ape",
+    "rockets", "soars", "surges", "plunges",
+]
+
+SOURCE_WHITELIST = [
+    "reuters.com", "bloomberg.com", "ft.com", "wsj.com",
+    "federalreserve.gov", "treasury.gov", "bls.gov", "bea.gov",
+    "cnbc.com", "marketwatch.com", "barrons.com",
+]
+
+SOURCE_BLACKLIST = [
+    "prnewswire.com", "businesswire.com", "globenewswire.com",
+    "accesswire.com", "newsfilecorp.com",
+    "seekingalpha.com", "themotleyfool.com", "investorplace.com",
+]
+
+CLICKBAIT_PHRASES = [
+    "what you need to know", "explained", "here's why", "here is why",
+    "everything you need to know", "you won't believe",
+    "price prediction", "forecast", "top picks", "buy now",
+]
+
+MODAL_WEAK_WORDS = [
+    "could", "might", "may", "likely", "unlikely",
+    "expected", "expected to", "set to", "poised to", "seen as",
+]
+
+WIRE_PHRASES = [
+    "said in a statement", "in a statement",
+    "according to people familiar", "people familiar with the matter",
+    "sources said", "data showed", "figures showed",
+    "markets repriced", "investors reassessed",
+    "traders priced in", "priced in",
+]
+
+HIGH_IMPACT_TRIGGERS = [
+    "cpi", "core cpi", "ppi", "pce", "core pce",
+    "nonfarm payrolls", "nfp", "jobless claims", "unemployment rate",
+    "fomc", "fed minutes", "dot plot", "powell",
+    "auction", "refunding", "bid-to-cover", "tail",
+    "2-year", "10-year", "real yield", "sofr", "repo", "qt",
+    "vix", "0dte", "gamma", "dealer hedging", "skew",
+]
+
+NEGATIVE_KEYWORDS = [
+    "quarterback", "broncos", "giants", "nfl", "nba", "mlb", "nhl", "soccer", "football",
+    "rebooking", "flight", "flights", "airline", "visa",
+    "brain", "learning", "health", "fitness",
+]
+
+
+# =========================
+# UI
+# =========================
+st.set_page_config(page_title="OZYTARGET — Bloomberg Mode + AI", layout="wide")
+
+st.markdown(
+    """
+<style>
+.stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
+.header { color: #79c0ff; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: 'Courier New', monospace; }
+.card { border-left: 3px solid #1f6feb; padding: 12px 14px; margin-bottom: 10px; background: rgba(20, 20, 30, 0.92); border-radius: 6px; }
+.meta { color: #8b949e; font-size: 12px; }
+.source { color: #79c0ff; font-size: 12px; font-weight: 700; margin-right: 10px; }
+.title { color: #e6edf3; font-size: 15px; font-weight: 650; line-height: 1.35; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
+.small { color:#8b949e; font-size:12px; }
+hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+st_autorefresh(interval=AUTO_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
+
+
+# =========================
+# STATE
+# =========================
+if "latest_news" not in st.session_state:
+    st.session_state["latest_news"] = []
+if "last_fetch_ts" not in st.session_state:
+    st.session_state["last_fetch_ts"] = 0.0
+if "auto_keywords" not in st.session_state:
+    st.session_state["auto_keywords"] = DEFAULT_KEYWORDS
+
+
+# =========================
+# HELPERS
+# =========================
+def safe_parse_time(value: str) -> float:
+    if not value:
+        return 0.0
+    try:
+        dt = date_parser.parse(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return 0.0
+
+
+def time_ago(ts_seconds: float) -> str:
+    now = time.time()
+    diff = max(0, now - ts_seconds)
+    if diff < 60:
+        return f"{int(diff)}s"
+    if diff < 3600:
+        return f"{int(diff // 60)}m"
+    return f"{int(diff // 3600)}h"
+
+
+def count_hits(text: str, keywords: list[str]) -> int:
+    s = (text or "").lower()
+    hits = 0
+    for kw in keywords:
+        k = (kw or "").strip().lower()
+        if not k:
+            continue
+        if (" " in k) or ("-" in k):
+            if k in s:
+                hits += 1
+            continue
+        if re.search(r"\b" + re.escape(k) + r"\b", s):
+            hits += 1
+    return hits
+
+
+def dedupe(items: list[dict]) -> list[dict]:
+    seen = set()
+    out = []
+    for a in items:
+        link = (a.get("link") or "").strip()
+        if link:
+            key = ("link", link)
+        else:
+            t = re.sub(r"\s+", " ", (a.get("title") or "").strip().lower())
+            key = ("title", t[:240])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(a)
+    return out
+
+
+def _extract_domain(url: str) -> str:
+    try:
+        host = (urlparse(url).netloc or "").lower()
+        return host.replace("www.", "")
+    except Exception:
+        return ""
+
+
+def _domain_in(domain: str, patterns: list[str]) -> bool:
+    if not domain:
+        return False
+    return any(p in domain for p in patterns)
+
+
+def filter_institutional(items: list[dict], min_kw: int, max_noise: int) -> list[dict]:
+    out = []
+    now_ts = time.time()
+    max_age_sec = float(MAX_ARTICLE_AGE_HOURS) * 3600.0
+
+    hard_block_re = re.compile(r"\b(" + "|".join(map(re.escape, NEGATIVE_KEYWORDS)) + r")\b", re.IGNORECASE)
+
+    for a in items:
+        title = (a.get("title") or "").strip()
+        summary = (a.get("summary") or "").strip()
+
+        if len(title) < 5:
+            continue
+
+        ts = float(a.get("_ts") or 0.0)
+        if ts <= 0:
+            continue
+
+        if (now_ts - ts) > max_age_sec:
+            continue
+
+        blob = f"{title}\n{summary}".strip()
+        if hard_block_re.search(blob):
+            continue
+
+        blob_l = blob.lower()
+        kw_hits = count_hits(blob_l, INSTITUTIONAL_KEYWORDS)
+        noise_hits = count_hits(blob_l, NOISE_KEYWORDS)
+
+        if kw_hits >= min_kw and noise_hits <= max_noise:
+            b = dict(a)
+            b["_kw_hits"] = kw_hits
+            b["_noise_hits"] = noise_hits
+            out.append(b)
+
+    return out
+
+
+def score_bloomberg(item: dict) -> dict:
+    title = (item.get("title") or "").strip()
+    summary = (item.get("summary") or "").strip()
+    blob = f"{title}\n{summary}".lower()
+
+    domain = _extract_domain(item.get("link") or "")
+    score = 0
+    reasons = []
+
+    kw_hits = int(item.get("_kw_hits", 0))
+    noise_hits = int(item.get("_noise_hits", 0))
+
+    if kw_hits:
+        score += min(40, kw_hits * 6)
+        reasons.append(f"+inst({kw_hits})")
+
+    hi_hits = count_hits(blob, HIGH_IMPACT_TRIGGERS)
+    if hi_hits:
+        score += min(30, hi_hits * 8)
+        reasons.append(f"+impact({hi_hits})")
+
+    wire_hits = count_hits(blob, WIRE_PHRASES)
+    if wire_hits:
+        score += min(16, wire_hits * 8)
+        reasons.append(f"+wire({wire_hits})")
+
+    if _domain_in(domain, SOURCE_WHITELIST):
+        score += 18
+        reasons.append("+whitelist")
+    if _domain_in(domain, SOURCE_BLACKLIST):
+        score -= 28
+        reasons.append("-blacklist")
+
+    if noise_hits:
+        score -= min(30, noise_hits * 10)
+        reasons.append(f"-noise({noise_hits})")
+
+    cb_hits = count_hits(blob, CLICKBAIT_PHRASES)
+    if cb_hits:
+        score -= min(30, cb_hits * 15)
+        reasons.append(f"-clickbait({cb_hits})")
+
+    modal_hits = count_hits(blob, MODAL_WEAK_WORDS)
+    if modal_hits:
+        score -= min(18, modal_hits * 6)
+        reasons.append(f"-modal({modal_hits})")
+
+    score = max(-50, min(100, score))
+
+    out = dict(item)
+    out["_domain"] = domain
+    out["_score"] = score
+    out["_reasons"] = " ".join(reasons[:6])
+    return out
+
+
+def make_item_hash(title: str, link: str) -> str:
+    base = (title or "").strip().lower() + "|" + (link or "").strip().lower()
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+# =========================
+# DB (Postgres or SQLite)
+# =========================
+def db_connect():
+    if DATABASE_URL:
+        try:
+            import psycopg2  # psycopg2-binary
+            conn = psycopg2.connect(DATABASE_URL)
+            return "postgres", conn
+        except Exception:
+            pass
+
+    conn = sqlite3.connect("news.db", check_same_thread=False)
+    return "sqlite", conn
+
+
+@st.cache_resource
+def get_db():
+    return db_connect()
+
+
+def db_init():
+    kind, conn = get_db()
+    cur = conn.cursor()
+
+    if kind == "postgres":
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS news_items (
+            id BIGSERIAL PRIMARY KEY,
+            item_hash TEXT UNIQUE,
+            ts DOUBLE PRECISION,
+            source TEXT,
+            domain TEXT,
+            title TEXT,
+            summary TEXT,
+            link TEXT,
+            score INTEGER,
+            kw_hits INTEGER,
+            noise_hits INTEGER
+        );
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_digests (
+            id BIGSERIAL PRIMARY KEY,
+            ts DOUBLE PRECISION,
+            window_hours INTEGER,
+            content_json TEXT
+        );
+        """)
+    else:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS news_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_hash TEXT UNIQUE,
+            ts REAL,
+            source TEXT,
+            domain TEXT,
+            title TEXT,
+            summary TEXT,
+            link TEXT,
+            score INTEGER,
+            kw_hits INTEGER,
+            noise_hits INTEGER
+        );
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_digests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL,
+            window_hours INTEGER,
+            content_json TEXT
+        );
+        """)
+    conn.commit()
+
+
+def db_prune_old():
+    kind, conn = get_db()
+    cutoff_ts = time.time() - (RETENTION_DAYS * 86400.0)
+    cur = conn.cursor()
+    if kind == "postgres":
+        cur.execute("DELETE FROM news_items WHERE ts < %s;", (cutoff_ts,))
+    else:
+        cur.execute("DELETE FROM news_items WHERE ts < ?;", (cutoff_ts,))
+    conn.commit()
+
+
+def db_upsert_many(items: list[dict]):
+    kind, conn = get_db()
+    cur = conn.cursor()
+
+    rows = []
+    for a in items:
+        title = (a.get("title") or "").strip()
+        link = (a.get("link") or "").strip()
+        item_hash = make_item_hash(title, link)
+
+        rows.append((
+            item_hash,
+            float(a.get("_ts") or 0.0),
+            (a.get("source") or ""),
+            (a.get("_domain") or _extract_domain(link)),
+            title,
+            (a.get("summary") or ""),
+            link,
+            int(a.get("_score") or 0),
+            int(a.get("_kw_hits") or 0),
+            int(a.get("_noise_hits") or 0),
+        ))
+
+    if not rows:
+        return
+
+    if kind == "postgres":
+        cur.executemany("""
+            INSERT INTO news_items
+            (item_hash, ts, source, domain, title, summary, link, score, kw_hits, noise_hits)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (item_hash) DO NOTHING;
+        """, rows)
+    else:
+        cur.executemany("""
+            INSERT OR IGNORE INTO news_items
+            (item_hash, ts, source, domain, title, summary, link, score, kw_hits, noise_hits)
+            VALUES (?,?,?,?,?,?,?,?,?,?);
+        """, rows)
+
+    conn.commit()
+    db_prune_old()
+
+
+def db_get_news_since(hours: int, limit: int = 500) -> list[dict]:
+    kind, conn = get_db()
+    since_ts = time.time() - (hours * 3600.0)
+    cur = conn.cursor()
+
+    if kind == "postgres":
+        cur.execute("""
+            SELECT ts, source, domain, title, summary, link, score, kw_hits, noise_hits
+            FROM news_items
+            WHERE ts >= %s
+            ORDER BY ts DESC
+            LIMIT %s;
+        """, (since_ts, limit))
+    else:
+        cur.execute("""
+            SELECT ts, source, domain, title, summary, link, score, kw_hits, noise_hits
+            FROM news_items
+            WHERE ts >= ?
+            ORDER BY ts DESC
+            LIMIT ?;
+        """, (since_ts, limit))
+
+    rows = cur.fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "_ts": float(r[0]),
+            "source": r[1],
+            "_domain": r[2],
+            "title": r[3],
+            "summary": r[4],
+            "link": r[5],
+            "_score": int(r[6]),
+            "_kw_hits": int(r[7]),
+            "_noise_hits": int(r[8]),
+        })
+    return out
+
+
+def db_get_latest_digest() -> dict | None:
+    kind, conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT ts, content_json FROM ai_digests ORDER BY ts DESC LIMIT 1;")
+    row = cur.fetchone()
+    if not row:
+        return None
+    try:
+        return {"ts": float(row[0]), "content": json.loads(row[1])}
+    except Exception:
+        return None
+
+
+def db_save_digest(content: dict, window_hours: int):
+    kind, conn = get_db()
+    cur = conn.cursor()
+    payload = json.dumps(content, ensure_ascii=False)
+    ts = time.time()
+
+    if kind == "postgres":
+        cur.execute(
+            "INSERT INTO ai_digests (ts, window_hours, content_json) VALUES (%s,%s,%s);",
+            (ts, window_hours, payload),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO ai_digests (ts, window_hours, content_json) VALUES (?,?,?);",
+            (ts, window_hours, payload),
+        )
+    conn.commit()
+
+
+# =========================
+# GEMINI AI ENGINE (Hourly)
+# =========================
+def gemini_generate_json(prompt: str) -> dict:
+    """
+    Calls Gemini (Generative Language API) and returns parsed JSON.
+    Uses REST endpoint with API key in env var GEMINI_API_KEY.
+    """
+    if not GEMINI_API_KEY:
+        return {"caption": "AI disabled: set GEMINI_API_KEY", "bullets": [], "scenarios": {}, "watchlist": []}
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_API_KEY}"
+
+    # Request: ask for JSON only
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.35,
+            "maxOutputTokens": 1400
+        }
+    }
+
+    r = requests.post(url, json=body, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+
+    # Extract text
+    text = ""
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        text = json.dumps(data)[:800]
+
+    # Gemini sometimes wraps JSON in ```json fences
+    text2 = text.strip()
+    text2 = re.sub(r"^```json\s*", "", text2, flags=re.IGNORECASE)
+    text2 = re.sub(r"^```\s*", "", text2)
+    text2 = re.sub(r"\s*```$", "", text2)
+
+    try:
+        return json.loads(text2)
+    except Exception:
+        # fallback "best effort"
+        return {
+            "caption": text[:400],
+            "bullets": [],
+            "scenarios": {"base": {"summary": "", "triggers": []},
+                          "bull": {"summary": "", "triggers": []},
+                          "bear": {"summary": "", "triggers": []}},
+            "watchlist": [],
+        }
+
+
+def _pack(items: list[dict], n: int) -> str:
+    lines = []
+    for a in items[:n]:
+        lines.append(f"- [{a.get('_domain','')}] {a.get('title','')} (score={a.get('_score',0)}) | {a.get('link','')}")
+    return "\n".join(lines)
+
+
+def build_digest_prompt(recent_24h: list[dict], context_30d: list[dict]) -> str:
+    return f"""
+You are a Bloomberg-style markets editor.
+
+INPUT:
+(1) LAST 24H HEADLINES (most recent first):
+{_pack(recent_24h, 50)}
+
+(2) CONTEXT LAST 30 DAYS (top by score):
+{_pack(context_30d, 80)}
+
+TASK:
+Generate a concise market "caption" and 3 scenarios.
+
+OUTPUT STRICTLY AS JSON with keys:
+- caption: string (1-2 lines, terminal-style)
+- bullets: array of 5-10 strings (market-moving drivers)
+- scenarios: object with keys base, bull, bear.
+    Each scenario = {{
+      "summary": string (1-2 lines),
+      "triggers": array of 3-6 strings (specific triggers/data/headlines)
+    }}
+- watchlist: array of 5-10 strings (next 24h to monitor)
+
+RULES:
+- Do not invent facts not in the headlines.
+- Use if/then.
+- Focus on rates, liquidity, macro, options/vol flows as primary drivers.
+""".strip()
+
+
+def maybe_generate_ai_digest() -> dict | None:
+    latest = db_get_latest_digest()
+    now_ts = time.time()
+
+    if latest and (now_ts - latest["ts"]) < AI_DIGEST_EVERY_SECONDS:
+        return latest["content"]
+
+    recent_24h = db_get_news_since(hours=AI_WINDOW_HOURS_RECENT, limit=600)
+    context_30d = db_get_news_since(hours=AI_CONTEXT_DAYS * 24, limit=1000)
+    context_30d.sort(key=lambda x: (x.get("_score", 0), x.get("_ts", 0.0)), reverse=True)
+
+    prompt = build_digest_prompt(recent_24h, context_30d)
+    content = gemini_generate_json(prompt)
+
+    db_save_digest(content, window_hours=AI_WINDOW_HOURS_RECENT)
+    return content
+
+
+# =========================
+# FETCHERS
+# =========================
+def fetch_google_news(keywords: list[str]) -> list[dict]:
+    base = " OR ".join(keywords) if keywords else "SPY"
+    when = "when:1d" if MAX_ARTICLE_AGE_HOURS <= 24 else "when:2d"
+    negative = " ".join([f"-{w}" for w in NEGATIVE_KEYWORDS])
+    query = f"({base}) {when} {negative}"
+
+    feed = requests.get(GOOGLE_NEWS_RSS.format(q=quote(query)), headers=HEADERS, timeout=12)
+    feed.raise_for_status()
+
+    import feedparser
+    parsed = feedparser.parse(feed.content)
+
+    items = []
+    for e in parsed.entries[:60]:
+        title = getattr(e, "title", "") or ""
+        link = getattr(e, "link", "") or ""
+        published = getattr(e, "published", "") or ""
+        summary = getattr(e, "summary", "") or ""
+        ts = safe_parse_time(published)
+
+        items.append({
+            "source": "OZYTARGET.COM",
+            "title": title.strip(),
+            "link": link.strip(),
+            "time": published.strip(),
+            "summary": summary.strip(),
+            "_ts": ts,
+        })
+    return items
+
+
+def fetch_bing_news(keywords: list[str]) -> list[dict]:
+    if not BING_API_KEY:
+        return []
+
+    base = " OR ".join(keywords) if keywords else "SPY"
+    negatives = " OR ".join(NEGATIVE_KEYWORDS)
+    query = f"({base}) NOT ({negatives})"
+
+    freshness = "Day" if MAX_ARTICLE_AGE_HOURS <= 24 else "Week"
+    params = {
+        "q": query,
+        "mkt": "en-US",
+        "count": 25,
+        "sortBy": "Date",
+        "freshness": freshness,
+        "safeSearch": "Off",
+        "textFormat": "Raw",
+    }
+
+    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY, **HEADERS}
+    r = requests.get(BING_NEWS_ENDPOINT, params=params, headers=headers, timeout=12)
+    r.raise_for_status()
+    data = r.json()
+
+    items = []
+    for v in data.get("value", [])[:25]:
+        title = (v.get("name") or "").strip()
+        link = (v.get("url") or "").strip()
+        published = (v.get("datePublished") or "").strip()
+        ts = safe_parse_time(published)
+
+        items.append({
+            "source": "OZYTARGET.COM",
+            "title": title,
+            "link": link,
+            "time": published,
+            "summary": "",
+            "_ts": ts,
+        })
+    return items
+
+
+# =========================
+# PIPELINE (cached)
+# =========================
+feed_box = st.container()
+
+@st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
+def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, cache_buster: int = 0) -> list[dict]:
+    items: list[dict] = []
+
+    try:
+        items.extend(fetch_google_news(keywords))
+    except Exception:
+        pass
+
+    try:
+        items.extend(fetch_bing_news(keywords))
+    except Exception:
+        pass
+
+    items = dedupe(items)
+    items = filter_institutional(items, min_kw=min_kw, max_noise=max_noise)
+    items = [score_bloomberg(x) for x in items]
+    items.sort(key=lambda x: x.get("_ts", 0.0), reverse=True)
+    return items
+
+
+# =========================
+# INIT DB
+# =========================
+db_init()
+
+
+# =========================
+# SETTINGS + REFRESH
+# =========================
+st.markdown("---")
+combined_input = st.text_input(
+    "Enter keywords (comma-separated)",
+    value=", ".join(st.session_state["auto_keywords"]),
+    key="combined_keywords_input"
+)
+manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
+st.session_state["auto_keywords"] = manual_keywords
+
+st.markdown("#### ⚡ Filter Settings")
+colC, colD = st.columns(2)
+with colC:
+    min_kw_hits = st.slider("Min KW", 1, 5, 1, key="min_kw_slider")
+with colD:
+    max_noise_hits = st.slider("Noise", 0, 3, 0, key="max_noise_slider")
+
+colA, colB, colC2 = st.columns([1, 1, 2])
+with colA:
+    force_refresh = st.button("🔄 Refresh NOW", use_container_width=True, key="force_refresh_now")
+with colB:
+    flush_cache = st.button("🧹 Flush Cache", use_container_width=True, key="flush_cache_now")
+with colC2:
+    st.markdown(
+        f"<div class='small'>Auto-refresh {AUTO_REFRESH_SECONDS}s | Cutoff {MAX_ARTICLE_AGE_HOURS}h | Retention {RETENTION_DAYS}d | AI hourly</div>",
+        unsafe_allow_html=True
+    )
+
+if flush_cache:
+    fetch_all_sources_cached.clear()
+    st.session_state["last_fetch_ts"] = 0.0
+
+
+# =========================
+# AUTO FETCH + STORE
+# =========================
+now_ts = time.time()
+should_fetch = force_refresh or ((now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS)
+
+if should_fetch:
+    with st.spinner("Auto-fetching latest news..."):
+        buster = int(now_ts) if force_refresh else 0
+        fresh = fetch_all_sources_cached(
+            keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
+            min_kw=min_kw_hits,
+            max_noise=max_noise_hits,
+            cache_buster=buster,
+        )
+        st.session_state["latest_news"] = fresh
+        st.session_state["last_fetch_ts"] = now_ts
+
+        try:
+            db_upsert_many(fresh)
+        except Exception as e:
+            st.warning(f"DB write error: {e}")
+
+
+# =========================
+# AI DIGEST (Hourly)
+# =========================
+ai_digest = None
+try:
+    ai_digest = maybe_generate_ai_digest()
+except Exception as e:
+    ai_digest = {"caption": f"AI digest error: {e}", "bullets": [], "scenarios": {}, "watchlist": []}
+
+
+# =========================
+# RENDER
+# =========================
+with feed_box:
+    st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
+
+    if ai_digest and isinstance(ai_digest, dict):
+        st.markdown("### AI Caption (Hourly)")
+        st.markdown(f"**{ai_digest.get('caption','')}**")
+
+        scenarios = ai_digest.get("scenarios", {}) if isinstance(ai_digest.get("scenarios", {}), dict) else {}
+        c1, c2, c3 = st.columns(3)
+        for col, key in [(c1, "base"), (c2, "bull"), (c3, "bear")]:
+            d = scenarios.get(key, {}) if isinstance(scenarios, dict) else {}
+            with col:
+                st.markdown(f"**{key.upper()}**")
+                st.write(d.get("summary", ""))
+                triggers = d.get("triggers", []) if isinstance(d.get("triggers", []), list) else []
+                if triggers:
+                    st.markdown("Triggers:")
+                    for t in triggers[:6]:
+                        st.write(f"- {t}")
+
+        bullets = ai_digest.get("bullets", [])
+        if isinstance(bullets, list) and bullets:
+            st.markdown("#### Key Drivers")
+            for b in bullets[:10]:
+                st.write(f"- {b}")
+
+        watch = ai_digest.get("watchlist", [])
+        if isinstance(watch, list) and watch:
+            st.markdown("#### Watchlist (Next 24h)")
+            for w in watch[:10]:
+                st.write(f"- {w}")
+
+    st.markdown("---")
+
+    news = st.session_state.get("latest_news") or []
+    if not news:
+        st.info("📰 Loading news... (first fetch usually takes a few seconds)")
+    else:
+        for a in news[:80]:
+            st.markdown(
+                f"""
+<div class="card">
+  <div class="meta">
+    <span class="source">{a.get('source','')}</span>
+    <span>{time_ago(a.get('_ts', 0.0))} ago</span>
+    <span class="badge">score={a.get('_score', 0)}</span>
+    <span class="badge">kw={a.get('_kw_hits', 0)}</span>
+    <span class="badge">noise={a.get('_noise_hits', 0)}</span>
+    <span class="badge">{a.get('_domain','')}</span>
+    <span style="margin-left:10px;">| {a.get('time','')}</span>
+  </div>
+  <div class="title">
+    <a href="{a.get('link','')}" target="_blank" style="color:#e6edf3; text-decoration:none;">
+      {a.get('title','')}
+    </a>
+    <span class="badge" style="margin-left:8px;">{a.get('_reasons','')}</span>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+
+st.markdown("---")
+st.markdown("*Developed by ozy | © 2026 | AI Caption & Scenario Engine |*")
