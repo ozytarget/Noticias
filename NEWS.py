@@ -1514,7 +1514,6 @@ st.markdown(
 )
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
-    value=st.session_state["combined_keywords_input"],
     key="combined_keywords_input"
 )
 st.markdown("""</div>""", unsafe_allow_html=True)
