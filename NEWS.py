@@ -24,7 +24,7 @@ AI_DIGEST_EVERY_SECONDS = 3600
 AI_WINDOW_HOURS_RECENT = 24
 AI_CONTEXT_DAYS = 30
 
-DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
+DEFAULT_KEYWORDS = ["SPX", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "EARNINGS" "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
