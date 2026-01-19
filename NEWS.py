@@ -1151,8 +1151,7 @@ if flush_cache:
 # =========================
 # DEBUG (LOCAL)
 # =========================
-debug_ai = st.toggle("🧪 Debug AI (show raw Gemini)", value=False)
-st.session_state["debug_ai"] = debug_ai
+debug_ai = True  # Always show raw Gemini response
 
 
 # =========================
