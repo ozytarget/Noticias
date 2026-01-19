@@ -1543,13 +1543,16 @@ with feed_box:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
         for a in news[:80]:
+            score = int(a.get('_score', 0))
+            # Red semi-transparent background for high-score alerts
+            bg_style = "background-color: rgba(255, 0, 0, 0.1);" if score >= 60 else ""
             st.markdown(
                 f"""
-<div class="card">
+<div class="card" style="{bg_style}">
   <div class="meta">
     <span class="source">{a.get('source','')}</span>
     <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">score={a.get('_score', 0)}</span>
+    <span class="badge">score={score}</span>
     <span class="badge">kw={a.get('_kw_hits', 0)}</span>
     <span class="badge">noise={a.get('_noise_hits', 0)}</span>
     <span class="badge">{a.get('_domain','')}</span>
