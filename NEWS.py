@@ -1505,16 +1505,19 @@ if reset_core:
 
 # =========================
 # KEYWORDS INPUT (comma-separated)
-# - Default: generated from CORE + selected HOT TOPICS
-# - User can still manually edit; manual overrides become the active keywords
+# - Controlled by session_state: Apply/Reset updates value immediately
+# - User edits also update session_state via key="..."
 # =========================
 st.markdown(
     """<div style="background-color: rgba(255, 255, 0, 0.2); padding: 10px; border-radius: 6px; margin-bottom: 10px;">""",
     unsafe_allow_html=True,
 )
+
+# Controlled input: always shows session_state value, updates both on user edit and button press
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
-    key="combined_keywords_input"
+    value=st.session_state.get("combined_keywords_input", ""),
+    key="combined_keywords_input",
 )
 st.markdown("""</div>""", unsafe_allow_html=True)
 
