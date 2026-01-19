@@ -24,14 +24,7 @@ AI_DIGEST_EVERY_SECONDS = 3600
 AI_WINDOW_HOURS_RECENT = 24
 AI_CONTEXT_DAYS = 30
 
-DEFAULT_KEYWORDS = [
-    "CPI", "PCE", "NFP", "Jobless Claims", "ISM", "PMI",
-    "Powell", "Fed Minutes", "Dot Plot", "QT",
-    "Treasury auction", "TGA", "RRP", "Repo", "SOFR",
-    "2-year", "10-year", "Yield curve",
-    "VIX", "Skew", "0DTE", "OPEX", "Dealer hedging",
-    "USDJPY", "BOJ"
-]
+DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
@@ -135,6 +128,7 @@ st.markdown(
 .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; margin-left:6px; border:1px solid rgba(121,192,255,.25); color:#79c0ff; }
 .small { color:#8b949e; font-size:12px; }
 hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); }
+input[data-testid="TextInput"] { background-color: rgba(255, 255, 0, 0.2) !important; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -1384,40 +1378,18 @@ db_init_alerts()
 # SETTINGS + REFRESH
 # =========================
 st.markdown("---")
+st.markdown(
+    """<div style="background-color: rgba(255, 255, 0, 0.2); padding: 10px; border-radius: 6px; margin-bottom: 10px;">""",
+    unsafe_allow_html=True,
+)
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
     value=", ".join(st.session_state["auto_keywords"]),
     key="combined_keywords_input"
 )
+st.markdown("""</div>""", unsafe_allow_html=True)
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
 st.session_state["auto_keywords"] = manual_keywords
-
-# Detect if any HIGH_IMPACT keywords are present
-has_high_impact = any(
-    any(hi.lower() in kw.lower() for hi in HIGH_IMPACT_TRIGGERS)
-    for kw in manual_keywords
-)
-
-# Apply color styling based on high-impact detection
-if has_high_impact:
-    st.markdown(
-        """
-        <style>
-        input[key="combined_keywords_input"] {
-            background-color: rgba(255, 255, 0, 0.2) !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f"""
-        <div style="background-color: rgba(255, 255, 0, 0.2); padding: 8px; border-radius: 4px; border-left: 3px solid #FFD700; margin-bottom: 10px;">
-            <span style="color: #FFD700; font-weight: 700; font-size: 12px;">⚡ HIGH-IMPACT KEYWORDS DETECTED</span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
 # ⚡ Filter Settings (hidden, using defaults)
 min_kw_hits = 1  # Default: Min KW = 1
