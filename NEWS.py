@@ -873,7 +873,7 @@ def gemini_generate_text(prompt: str, debug: bool = False) -> str:
     # Keep last chunk (usually includes headline packs) and cap size in chars.
     # This prevents promptTokenCount exploding.
     prompt = (prompt or "").strip()
-    MAX_CHARS = 18000  # conservative; prevents 10k+ tokens runaway
+    MAX_CHARS = 10000  # reduced from 18000; prevents MAX_TOKENS error
     if len(prompt) > MAX_CHARS:
         prompt = prompt[-MAX_CHARS:]
 
@@ -929,53 +929,41 @@ def build_digest_prompt(recent_24h: list[dict], context_30d: list[dict]) -> str:
             lines.append(f"[H{i}] ({dom}) score={score} | {title} | {link}")
         return "\n".join(lines)
 
-    recent_txt = _pack_with_ids(recent_24h, 30)
-    context_txt = _pack_with_ids(context_30d, 35)
+    recent_txt = _pack_with_ids(recent_24h, 20)
+    context_txt = _pack_with_ids(context_30d, 20)
 
     return f"""
-You are a Bloomberg-style markets editor. Output ONLY valid JSON (no markdown, no text before/after).
+You are a Bloomberg-style markets editor. Output ONLY valid JSON (no markdown).
 
 JSON SCHEMA:
 {{
-  "caption": "<1-2 lines terminal-style>",
+  "caption": "<2 lines max>",
   "reasoning": [
-    {{"claim": "...", "evidence_ids": ["H1", "H3"], "why_it_matters": "..."}},
-    {{"claim": "...", "evidence_ids": ["H2"], "why_it_matters": "..."}},
-    {{"claim": "...", "evidence_ids": ["H4", "H5"], "why_it_matters": "..."}}
+    {{"claim": "...", "evidence_ids": ["H1"], "why": "..."}},
+    {{"claim": "...", "evidence_ids": ["H2"], "why": "..."}}
   ],
-  "bullets": ["driver1", "driver2", ...],
   "scenarios": {{
-    "base": {{"summary": "...", "triggers": ["if X then Y"], "evidence_ids": ["H1"]}},
-    "bull": {{"summary": "...", "triggers": ["if A then B"], "evidence_ids": ["H2"]}},
-    "bear": {{"summary": "...", "triggers": ["if C then D"], "evidence_ids": ["H3"]}}
+    "bull": "...",
+    "bear": "..."
   }},
-  "short_term_outlook_1_7d": {{
-    "summary": "...",
-    "key_drivers": ["driver1", "driver2"],
-    "technical_levels": {{"support": "...", "resistance": "..."}},
-    "risk_factors": ["risk1", "risk2"],
-    "evidence_ids": ["H1", "H2"]
-  }},
-  "watchlist": ["item1", "item2", ...]
+  "watchlist": ["item1", "item2"]
 }}
 
 RULES:
-- Do NOT invent facts not implied by headlines.
-- Prefer rates, liquidity, macro, options/vol flows.
-- If headlines are insufficient, still return valid JSON with empty/minimal content.
-- Evidence IDs MUST reference headlines like H1, H2, etc.
-- Output ONLY JSON, nothing else.
+- Do NOT invent facts.
+- Use only headlines H1-H20.
+- Output ONLY valid JSON, nothing else.
 
-LAST 24H HEADLINES:
+24H HEADLINES:
 {recent_txt}
 
-CONTEXT 30 DAYS (top by score):
+30D CONTEXT:
 {context_txt}
 """.strip()
 
 
 def build_manual_ai_prompt_from_latest(latest_items: list[dict]) -> str:
-    def pack(items: list[dict], n: int = 18) -> str:
+    def pack(items: list[dict], n: int = 12) -> str:
         lines = []
         for i, a in enumerate(items[:n], start=1):
             dom = a.get("_domain", "")
@@ -1013,22 +1001,18 @@ WATCHLIST (next 24h; 6 items):
 
 ═══════════════════════════════════════════════════════════════
 
-📈 BULLISH ASSETS RECOMMENDATION (1-7 DAYS):
-- Asset 1: <sector/ticker> | Price Target: <level> | Why: <reason from headlines> | Confidence: HIGH/MEDIUM
-- Asset 2: <sector/ticker> | Price Target: <level> | Why: <reason from headlines> | Confidence: HIGH/MEDIUM
-- Asset 3: <sector/ticker> | Price Target: <level> | Why: <reason from headlines> | Confidence: HIGH/MEDIUM
-- Asset 4: <sector/ticker> | Price Target: <level> | Why: <reason from headlines> | Confidence: HIGH/MEDIUM
+📈 BULLISH ASSETS (1-7 DAYS):
+- Asset: <ticker> | Target: <level> | Why: <reason> | Conf: HIGH/MED
+- Asset: <ticker> | Target: <level> | Why: <reason> | Conf: HIGH/MED
 
-📉 BEARISH ASSETS / SHORT CANDIDATES (1-7 DAYS):
-- Asset 1: <sector/ticker> | Stop Loss: <level> | Why: <risk/headwind from headlines> | Confidence: HIGH/MEDIUM
-- Asset 2: <sector/ticker> | Stop Loss: <level> | Why: <risk/headwind from headlines> | Confidence: HIGH/MEDIUM
-- Asset 3: <sector/ticker> | Stop Loss: <level> | Why: <risk/headwind from headlines> | Confidence: HIGH/MEDIUM
-- Asset 4: <sector/ticker> | Stop Loss: <level> | Why: <risk/headwind from headlines> | Confidence: HIGH/MEDIUM
+📉 BEARISH ASSETS (1-7 DAYS):
+- Asset: <ticker> | Stop: <level> | Why: <risk> | Conf: HIGH/MED
+- Asset: <ticker> | Stop: <level> | Why: <risk> | Conf: HIGH/MED
 
 ═══════════════════════════════════════════════════════════════
 
 HEADLINES:
-{pack(latest_items, 18)}
+{pack(latest_items, 12)}
 """.strip()
 
 
