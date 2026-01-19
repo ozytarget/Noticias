@@ -145,8 +145,6 @@ if "last_fetch_ts" not in st.session_state:
     st.session_state["last_fetch_ts"] = 0.0
 if "auto_keywords" not in st.session_state:
     st.session_state["auto_keywords"] = DEFAULT_KEYWORDS
-if "alert_sound_enabled" not in st.session_state:
-    st.session_state["alert_sound_enabled"] = True
 
 
 # =========================
@@ -633,74 +631,6 @@ def db_mark_alert_seen(item: dict, alert_hash: str):
     conn.commit()
 
 
-def play_alert_beep():
-    """
-    Play a simple beep sound using HTML5 Web Audio API.
-    Only plays if alert_sound_enabled is True.
-    """
-    # Check if sound is enabled
-    if not st.session_state.get("alert_sound_enabled", True):
-        return
-    
-    beep_html = """
-    <script>
-    (function() {
-        try {
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = 1000; // 1000 Hz beep
-            oscillator.type = 'sine';
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.2);
-        } catch(e) {
-            console.log('Audio not available');
-        }
-    })();
-    </script>
-    """
-    st.components.v1.html(beep_html, height=0)
-
-
-def extend_toast_duration():
-    """
-    Extend toast visibility to 8 seconds using JavaScript.
-    """
-    extend_html = """
-    <script>
-    (function() {
-        // Wait for toast to appear, then extend its visibility
-        setTimeout(function() {
-            const toasts = document.querySelectorAll('[data-testid="toast"]');
-            toasts.forEach(function(toast) {
-                // Remove any auto-hide animations/timers
-                toast.style.animation = 'none';
-                toast.style.opacity = '1';
-                
-                // Manually hide after 8 seconds
-                setTimeout(function() {
-                    toast.style.transition = 'opacity 0.5s ease-out';
-                    toast.style.opacity = '0';
-                    setTimeout(function() {
-                        toast.remove();
-                    }, 500);
-                }, 8000);
-            });
-        }, 100);
-    })();
-    </script>
-    """
-    st.components.v1.html(extend_html, height=0)
-
-
 def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
     """
     Fires a Streamlit toast for each NEW item (deduped by DB).
@@ -728,8 +658,6 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
 
         msg = f"NEW: [Ozytarget.com] score={score} — {title[:140]}"
         st.toast(msg)
-        play_alert_beep()
-        extend_toast_duration()
 
         st.session_state["alerts_feed"].insert(0, {
             "ts": time.time(),
@@ -1591,13 +1519,9 @@ except Exception as e:
 # RENDER
 # =========================
 with feed_box:
-    # Top right controls
     col_title, col_controls = st.columns([4, 1])
     with col_title:
         st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
-    with col_controls:
-        alert_sound_enabled = st.toggle("🔊", value=st.session_state.get("alert_sound_enabled", True), key="sound_toggle")
-        st.session_state["alert_sound_enabled"] = alert_sound_enabled
     
     st.markdown("---")
     
