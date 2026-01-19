@@ -122,8 +122,6 @@ st.markdown(
 .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
 .header { color: #79c0ff; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: 'Courier New', monospace; }
 .card { border-left: 3px solid #1f6feb; padding: 12px 14px; margin-bottom: 10px; background: rgba(20, 20, 30, 0.92); border-radius: 6px; }
-.card-high { border-left: 3px solid #ff4444; padding: 12px 14px; margin-bottom: 10px; background: rgba(139, 0, 0, 0.15); border-radius: 6px; }
-.card-medium { border-left: 3px solid #ffaa00; padding: 12px 14px; margin-bottom: 10px; background: rgba(184, 134, 11, 0.12); border-radius: 6px; }
 .meta { color: #8b949e; font-size: 12px; }
 .source { color: #79c0ff; font-size: 12px; font-weight: 700; margin-right: 10px; }
 .title { color: #e6edf3; font-size: 15px; font-weight: 650; line-height: 1.35; }
@@ -147,6 +145,8 @@ if "last_fetch_ts" not in st.session_state:
     st.session_state["last_fetch_ts"] = 0.0
 if "auto_keywords" not in st.session_state:
     st.session_state["auto_keywords"] = DEFAULT_KEYWORDS
+if "alert_sound_enabled" not in st.session_state:
+    st.session_state["alert_sound_enabled"] = True
 
 
 # =========================
@@ -333,7 +333,6 @@ def db_connect():
             pass
 
     conn = sqlite3.connect("news.db", check_same_thread=False)
-    conn.isolation_level = None  # Enable autocommit mode for SQLite
     return "sqlite", conn
 
 
@@ -413,16 +412,11 @@ def db_prune_old():
     kind, conn = get_db()
     cutoff_ts = time.time() - (RETENTION_DAYS * 86400.0)
     cur = conn.cursor()
-    try:
-        if kind == "postgres":
-            cur.execute("DELETE FROM news_items WHERE ts < %s;", (cutoff_ts,))
-        else:
-            cur.execute("DELETE FROM news_items WHERE ts < ?;", (cutoff_ts,))
-        conn.commit()
-    except Exception as e:
-        print(f"DB prune error: {e}")
-        if kind == "postgres":
-            conn.rollback()
+    if kind == "postgres":
+        cur.execute("DELETE FROM news_items WHERE ts < %s;", (cutoff_ts,))
+    else:
+        cur.execute("DELETE FROM news_items WHERE ts < ?;", (cutoff_ts,))
+    conn.commit()
 
 
 def db_upsert_many(items: list[dict]):
@@ -465,12 +459,7 @@ def db_upsert_many(items: list[dict]):
             VALUES (?,?,?,?,?,?,?,?,?,?);
         """, rows)
 
-    try:
-        conn.commit()
-    except Exception as e:
-        print(f"DB commit error in upsert: {e}")
-        if kind == "postgres":
-            conn.rollback()
+    conn.commit()
     db_prune_old()
 
 
@@ -558,12 +547,7 @@ def db_save_digest(content: dict, window_hours: int):
             (ts, window_hours, digest_hour, payload),
         )
 
-    try:
-        conn.commit()
-    except Exception as e:
-        print(f"DB commit error in digest: {e}")
-        if kind == "postgres":
-            conn.rollback()
+    conn.commit()
 
 
 # =========================
@@ -646,36 +630,89 @@ def db_mark_alert_seen(item: dict, alert_hash: str):
             VALUES (?,?,?,?,?,?);
         """, (alert_hash, ts, title, link, domain, score))
 
-    try:
-        conn.commit()
-    except Exception as e:
-        print(f"DB commit error in mark_alert: {e}")
-        if kind == "postgres":
-            conn.rollback()
+    conn.commit()
+
+
+def play_alert_beep():
+    """
+    Play a simple beep sound using HTML5 Web Audio API.
+    Only plays if alert_sound_enabled is True.
+    """
+    # Check if sound is enabled
+    if not st.session_state.get("alert_sound_enabled", True):
+        return
+    
+    beep_html = """
+    <script>
+    (function() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 1000; // 1000 Hz beep
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.2);
+        } catch(e) {
+            console.log('Audio not available');
+        }
+    })();
+    </script>
+    """
+    st.components.v1.html(beep_html, height=0)
+
+
+def extend_toast_duration():
+    """
+    Extend toast visibility to 8 seconds using JavaScript.
+    """
+    extend_html = """
+    <script>
+    (function() {
+        // Wait for toast to appear, then extend its visibility
+        setTimeout(function() {
+            const toasts = document.querySelectorAll('[data-testid="toast"]');
+            toasts.forEach(function(toast) {
+                // Remove any auto-hide animations/timers
+                toast.style.animation = 'none';
+                toast.style.opacity = '1';
+                
+                // Manually hide after 8 seconds
+                setTimeout(function() {
+                    toast.style.transition = 'opacity 0.5s ease-out';
+                    toast.style.opacity = '0';
+                    setTimeout(function() {
+                        toast.remove();
+                    }, 500);
+                }, 8000);
+            });
+        }, 100);
+    })();
+    </script>
+    """
+    st.components.v1.html(extend_html, height=0)
 
 
 def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
     """
     Fires a Streamlit toast for each NEW item (deduped by DB).
     Also stores a small feed in session_state to display in UI if desired.
-    ONLY ALERTS ON LIVE NEWS: articles published in last 60 minutes.
     """
     if "alerts_feed" not in st.session_state:
         st.session_state["alerts_feed"] = []
-
-    now_ts = time.time()
-    LIVE_WINDOW_MINUTES = 60  # Only alert on news < 60 minutes old
 
     fired = 0
     for it in items:
         if fired >= max_alerts_per_run:
             break
-
-        # Filter: only LIVE articles (< 60 minutes old)
-        article_ts = it.get("_ts", 0.0)
-        age_minutes = (now_ts - article_ts) / 60.0
-        if age_minutes > LIVE_WINDOW_MINUTES:
-            continue  # Skip old news
 
         ah = _alert_hash(it)
         if db_alert_already_seen(ah):
@@ -689,75 +726,74 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
         score = int(it.get("_score") or 0)
         link = (it.get("link") or "").strip()
 
-        # Remove source from title (e.g., "Title - Bloomberg.com" -> "Title")
-        if " - " in title:
-            title = title.rsplit(" - ", 1)[0].strip()
-
-        msg = f"[ozytarget.com] {title[:140]}"
+        msg = f"NEW: [Ozytarget.com] score={score} — {title[:140]}"
         st.toast(msg)
+        play_alert_beep()
+        extend_toast_duration()
 
         st.session_state["alerts_feed"].insert(0, {
             "ts": time.time(),
             "msg": msg,
             "link": link,
-            "score": score,
-            "article_ts": article_ts,
         })
-        st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:800]
+        st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:500]
 
         fired += 1
+
+
+def format_alert_time(ts: float) -> str:
+    """
+    Format alert timestamp to human-readable relative time.
+    "NEW" for < 1 minute, "5m ago", "1h ago", etc.
+    """
+    now = time.time()
+    diff_seconds = int(now - ts)
+    
+    if diff_seconds < 60:
+        return "NEW"
+    elif diff_seconds < 3600:
+        minutes = diff_seconds // 60
+        return f"{minutes}m ago"
+    elif diff_seconds < 86400:
+        hours = diff_seconds // 3600
+        return f"{hours}h ago"
+    else:
+        days = diff_seconds // 86400
+        return f"{days}d ago"
 
 
 def render_alerts_panel():
     """
     Optional UI panel (last alerts). Call where you want in RENDER.
-    NEW badge disappears after 60 seconds.
-    Only link is clickable - no source shown.
-    Stores up to 800 alerts, displays with scrolldown.
-    Text color matches score: Red (≥60), Yellow (40-59), White (<40).
-    Link is hidden but clickable (text doesn't appear as link).
-    Shows timestamp of when news was published.
     """
     feed = st.session_state.get("alerts_feed") or []
-    now_ts = time.time()
+    if not feed:
+        return
     
-    with st.expander(f"🚨 Alerts (new headlines) — {len(feed)} total", expanded=False):
-        if not feed:
-            st.info("📭 No new alerts yet. Waiting for LIVE news...")
-            return
+    with st.expander("🚨 Alerts (new headlines)", expanded=False):
+        # Create scrollable container with all alerts
+        alerts_html = """
+        <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px;">
+        """
         
-        # Create scrollable container with HTML/CSS
-        alerts_html = '<div style="height: 400px; overflow-y: auto; border: 1px solid rgba(121,192,255,.2); padding: 12px; border-radius: 6px; background: rgba(20, 20, 30, 0.5);">'
-        
-        for a in reversed(feed[:800]):  # Reverse order - newest on top
-            title = a.get("msg", "").replace("[ozytarget.com] ", "").strip()
+        for i, a in enumerate(feed):
+            msg = a.get("msg", "")
             link = a.get("link", "")
-            alert_ts = a.get("ts", 0)
-            article_ts = a.get("article_ts", 0)
-            score = int(a.get("score", 0))
-            age_sec = now_ts - alert_ts
+            ts = a.get("ts", time.time())
+            time_label = format_alert_time(ts)
             
-            # Format article timestamp
-            article_time = time_ago(article_ts) if article_ts else "unknown"
-            
-            # Determine text color based on score
-            if score >= 60:
-                text_color = "#ff6b6b"  # Red
-            elif score >= 40:
-                text_color = "#ffaa00"  # Yellow
-            else:
-                text_color = "#e6edf3"  # White
-            
-            # Show "NEW" badge only if < 60 seconds
-            new_badge = "🆕 NEW" if age_sec < 60 else ""
+            # Replace "NEW:" with time label
+            msg_updated = msg.replace("NEW:", time_label)
             
             if link:
-                # Link is invisible but clickable - text appears normal with score-based color
-                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: {text_color}; text-decoration: none;"><span style="color: #8b949e; font-size: 11px;">({article_time})</span> - {new_badge} {title}</a></div>'
+                alerts_html += f'<p><strong>{msg_updated}</strong><br><a href="{link}" target="_blank">🔗 open article</a></p>'
             else:
-                alerts_html += f'<div style="margin: 6px 0; color: {text_color};"><span style="color: #8b949e; font-size: 11px;">({article_time})</span> - {new_badge} {title}</div>'
+                alerts_html += f'<p><strong>{msg_updated}</strong></p>'
         
-        alerts_html += '</div>'
+        alerts_html += """
+        </div>
+        """
+        
         st.markdown(alerts_html, unsafe_allow_html=True)
 
 
@@ -1555,7 +1591,14 @@ except Exception as e:
 # RENDER
 # =========================
 with feed_box:
-    st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
+    # Top right controls
+    col_title, col_controls = st.columns([4, 1])
+    with col_title:
+        st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
+    with col_controls:
+        alert_sound_enabled = st.toggle("🔊", value=st.session_state.get("alert_sound_enabled", True), key="sound_toggle")
+        st.session_state["alert_sound_enabled"] = alert_sound_enabled
+    
     st.markdown("---")
     
     # Show alerts panel first
@@ -1566,22 +1609,13 @@ with feed_box:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
         for a in news[:80]:
-            score = int(a.get('_score', 0))
-            # Determine card color based on score
-            if score >= 60:
-                card_class = "card-high"
-            elif score >= 40:
-                card_class = "card-medium"
-            else:
-                card_class = "card"
-            
             st.markdown(
                 f"""
-<div class="{card_class}">
+<div class="card">
   <div class="meta">
     <span class="source">{a.get('source','')}</span>
     <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">score={score}</span>
+    <span class="badge">score={a.get('_score', 0)}</span>
     <span class="badge">kw={a.get('_kw_hits', 0)}</span>
     <span class="badge">noise={a.get('_noise_hits', 0)}</span>
     <span class="badge">{a.get('_domain','')}</span>
