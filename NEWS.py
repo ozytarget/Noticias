@@ -1463,22 +1463,6 @@ if "combined_keywords_input" not in st.session_state:
     # seed input once with DEFAULT_KEYWORDS (your working baseline)
     st.session_state["combined_keywords_input"] = ", ".join(st.session_state.get("auto_keywords", DEFAULT_KEYWORDS))
 
-st.markdown(
-    """
-    <div style="margin: 6px 0 8px 0; padding: 10px; border-radius: 8px;
-                border: 1px solid rgba(121,192,255,.25); background: rgba(20,20,30,.55);">
-      <div style="font-weight:800; color:#79c0ff; font-family:'Courier New', monospace;">
-        HOT TOPICS
-      </div>
-      <div style="color:#8b949e; font-size:12px; margin-top:4px;">
-        CORE fijo + temas del día (TRUMP/tariffs, China, geo, Fed speakers, oil). 
-        No te pisa el input: tú aplicas cuando quieras.
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
 selected_topics = st.multiselect(
     "Select HOT TOPICS (optional)",
     options=list(HOT_TOPICS.keys()),
