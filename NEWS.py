@@ -1500,9 +1500,18 @@ with feed_box:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
         for a in news[:80]:
+            score = a.get('_score', 0)
+            # Determine background color based on score
+            if score >= 60:
+                bg_color = "rgba(220, 80, 80, 0.15)"  # Soft red for high score
+            elif score >= 40:
+                bg_color = "rgba(220, 180, 80, 0.15)"  # Soft yellow for medium score
+            else:
+                bg_color = "rgba(20, 20, 30, 0.92)"    # Default dark
+            
             st.markdown(
                 f"""
-<div class="card">
+<div class="card" style="background: {bg_color};">
   <div class="meta">
     <span class="source">{a.get('source','')}</span>
     <span>{time_ago(a.get('_ts', 0.0))} ago</span>
