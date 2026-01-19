@@ -1486,6 +1486,9 @@ for t in selected_topics:
         seen.add(lk)
         preset_keywords.append(k)
 
+# Store preset separately (for clarity and debugging)
+st.session_state["preset_keywords"] = preset_keywords
+
 col_hot1, col_hot2, col_hot3 = st.columns([1, 1, 2])
 with col_hot1:
     apply_hot = st.button("✅ Apply HOT TOPICS → Input", use_container_width=True)
@@ -1496,11 +1499,11 @@ with col_hot3:
 
 if apply_hot:
     st.session_state["combined_keywords_input"] = ", ".join(preset_keywords)
-    st.session_state["auto_keywords"] = preset_keywords
+    st.session_state["preset_keywords"] = preset_keywords
 
 if reset_core:
     st.session_state["combined_keywords_input"] = ", ".join(CORE_KEYWORDS)
-    st.session_state["auto_keywords"] = CORE_KEYWORDS
+    st.session_state["preset_keywords"] = CORE_KEYWORDS
 
 
 # =========================
@@ -1523,12 +1526,14 @@ st.markdown("""</div>""", unsafe_allow_html=True)
 
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
 
-# manual_keywords are the ones actually used downstream
+# manual_keywords are the ones actually used downstream (input wins)
 st.session_state["auto_keywords"] = manual_keywords
 
-# Small status line
+# Status: show both preset (what you applied) and active (what you're using for fetch)
+preset_count = len(st.session_state.get("preset_keywords", []))
+active_count = len(manual_keywords)
 st.caption(
-    f"CORE={len(CORE_KEYWORDS)} | HOT TOPICS selected={len(selected_topics)} | active keywords={len(manual_keywords)}"
+    f"📋 Preset: {preset_count} kw | ⚡ Active (fetch): {active_count} kw"
 )
 
 # ⚡ Filter Settings (hidden, using defaults)
