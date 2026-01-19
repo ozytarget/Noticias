@@ -549,6 +549,144 @@ def db_save_digest(content: dict, window_hours: int):
 
 
 # =========================
+# ALERTS — "every new headline" (deduped, DB-backed)
+# =========================
+
+def _alert_hash(item: dict) -> str:
+    """
+    Stable ID for an alert. Prefer link; fallback title+domain+ts bucket.
+    """
+    link = (item.get("link") or "").strip().lower()
+    title = (item.get("title") or "").strip().lower()
+    dom = (item.get("_domain") or item.get("domain") or "").strip().lower()
+    ts = int(float(item.get("_ts") or 0.0) // 60)  # bucket by minute to reduce collisions
+    base = link if link else f"{title}|{dom}|{ts}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def db_init_alerts():
+    kind, conn = get_db()
+    cur = conn.cursor()
+
+    if kind == "postgres":
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS alerts_seen (
+            id BIGSERIAL PRIMARY KEY,
+            alert_hash TEXT UNIQUE,
+            ts DOUBLE PRECISION,
+            title TEXT,
+            link TEXT,
+            domain TEXT,
+            score INTEGER
+        );
+        """)
+    else:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS alerts_seen (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_hash TEXT UNIQUE,
+            ts REAL,
+            title TEXT,
+            link TEXT,
+            domain TEXT,
+            score INTEGER
+        );
+        """)
+
+    conn.commit()
+
+
+def db_alert_already_seen(alert_hash: str) -> bool:
+    kind, conn = get_db()
+    cur = conn.cursor()
+    if kind == "postgres":
+        cur.execute("SELECT 1 FROM alerts_seen WHERE alert_hash = %s LIMIT 1;", (alert_hash,))
+    else:
+        cur.execute("SELECT 1 FROM alerts_seen WHERE alert_hash = ? LIMIT 1;", (alert_hash,))
+    return cur.fetchone() is not None
+
+
+def db_mark_alert_seen(item: dict, alert_hash: str):
+    kind, conn = get_db()
+    cur = conn.cursor()
+
+    ts = float(item.get("_ts") or time.time())
+    title = (item.get("title") or "")[:400]
+    link = (item.get("link") or "")[:900]
+    domain = (item.get("_domain") or "")[:160]
+    score = int(item.get("_score") or 0)
+
+    if kind == "postgres":
+        cur.execute("""
+            INSERT INTO alerts_seen (alert_hash, ts, title, link, domain, score)
+            VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (alert_hash) DO NOTHING;
+        """, (alert_hash, ts, title, link, domain, score))
+    else:
+        cur.execute("""
+            INSERT OR IGNORE INTO alerts_seen (alert_hash, ts, title, link, domain, score)
+            VALUES (?,?,?,?,?,?);
+        """, (alert_hash, ts, title, link, domain, score))
+
+    conn.commit()
+
+
+def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
+    """
+    Fires a Streamlit toast for each NEW item (deduped by DB).
+    Also stores a small feed in session_state to display in UI if desired.
+    """
+    if "alerts_feed" not in st.session_state:
+        st.session_state["alerts_feed"] = []
+
+    fired = 0
+    for it in items:
+        if fired >= max_alerts_per_run:
+            break
+
+        ah = _alert_hash(it)
+        if db_alert_already_seen(ah):
+            continue
+
+        # mark first to avoid duplicates on rerun/flicker
+        db_mark_alert_seen(it, ah)
+
+        title = (it.get("title") or "").strip()
+        dom = (it.get("_domain") or "").strip()
+        score = int(it.get("_score") or 0)
+        link = (it.get("link") or "").strip()
+
+        msg = f"NEW: [{dom}] score={score} — {title[:140]}"
+        st.toast(msg)
+
+        st.session_state["alerts_feed"].insert(0, {
+            "ts": time.time(),
+            "msg": msg,
+            "link": link,
+        })
+        st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:30]
+
+        fired += 1
+
+
+def render_alerts_panel():
+    """
+    Optional UI panel (last alerts). Call where you want in RENDER.
+    """
+    feed = st.session_state.get("alerts_feed") or []
+    if not feed:
+        return
+    with st.expander("🚨 Alerts (new headlines)", expanded=False):
+        for a in feed[:12]:
+            msg = a.get("msg", "")
+            link = a.get("link", "")
+            if link:
+                st.markdown(f"- {msg}  ([open]({link}))")
+            else:
+                st.markdown(f"- {msg}")
+
+
+# =========================
 # GEMINI — robust REST (listModels + pick model + JSON-only generateContent)
 # =========================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -1113,6 +1251,7 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, c
 # INIT DB
 # =========================
 db_init()
+db_init_alerts()
 
 
 # =========================
@@ -1266,6 +1405,7 @@ if should_fetch:
 
         try:
             db_upsert_many(fresh)
+            alert_on_new_items(fresh, max_alerts_per_run=6)
         except Exception as e:
             st.warning(f"DB write error: {e}")
 
@@ -1342,6 +1482,9 @@ except Exception as e:
 with feed_box:
     st.markdown('<div class="header">OZYTARGET NEWS</div>', unsafe_allow_html=True)
     st.markdown("---")
+    
+    # Show alerts panel first
+    render_alerts_panel()
 
     news = st.session_state.get("latest_news") or []
     if not news:
