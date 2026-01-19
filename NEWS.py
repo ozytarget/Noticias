@@ -656,6 +656,10 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
         score = int(it.get("_score") or 0)
         link = (it.get("link") or "").strip()
 
+        # Remove news source from title (e.g., "Title - Source" -> "Title")
+        if " - " in title:
+            title = title.rsplit(" - ", 1)[0].strip()
+
         msg = f"NEW: [Ozytarget.com] score={score} — {title[:140]}"
         st.toast(msg)
 
