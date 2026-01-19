@@ -1629,13 +1629,13 @@ with feed_box:
             
             # Color priority: score >= 12 (red) > score > 8 (yellow) > user keywords (yellow) > none (transparent)
             if score >= 12:
-                bg_style = "background-color: rgba(255, 0, 0, 0.2);"  # Red semitransparent
+                bg_style = "background-color: rgba(255, 0, 0, 0.2) !important;"  # Red semitransparent
             elif score > 8:
-                bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent
+                bg_style = "background-color: rgba(255, 255, 0, 0.2) !important;"  # Yellow semitransparent
             elif user_kw_hits > 0:
-                bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent for user keywords
+                bg_style = "background-color: rgba(255, 255, 0, 0.2) !important;"  # Yellow semitransparent for user keywords
             else:
-                bg_style = ""  # Transparent
+                bg_style = "background-color: rgba(20, 20, 30, 0.92) !important;"  # Default dark background
             st.markdown(
                 f"""
 <div class="card" style="{bg_style}">
