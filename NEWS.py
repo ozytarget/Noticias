@@ -1151,7 +1151,7 @@ if flush_cache:
 # =========================
 # DEBUG (LOCAL)
 # =========================
-debug_ai = True  # Always show raw Gemini response
+debug_ai = False  # Show only processed output (cooked)
 
 
 # =========================
