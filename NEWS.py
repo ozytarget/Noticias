@@ -122,6 +122,8 @@ st.markdown(
 .stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); color: #e6edf3; }
 .header { color: #79c0ff; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: 'Courier New', monospace; }
 .card { border-left: 3px solid #1f6feb; padding: 12px 14px; margin-bottom: 10px; background: rgba(20, 20, 30, 0.92); border-radius: 6px; }
+.card-high { border-left: 3px solid #ff4444; padding: 12px 14px; margin-bottom: 10px; background: rgba(139, 0, 0, 0.15); border-radius: 6px; }
+.card-medium { border-left: 3px solid #ffaa00; padding: 12px 14px; margin-bottom: 10px; background: rgba(184, 134, 11, 0.12); border-radius: 6px; }
 .meta { color: #8b949e; font-size: 12px; }
 .source { color: #79c0ff; font-size: 12px; font-weight: 700; margin-right: 10px; }
 .title { color: #e6edf3; font-size: 15px; font-weight: 650; line-height: 1.35; }
@@ -673,7 +675,7 @@ def render_alerts_panel():
     """
     Optional UI panel (last alerts). Call where you want in RENDER.
     NEW badge disappears after 60 seconds.
-    Link is clickable but text appears normal (camuflaged).
+    Only link is clickable - no source shown.
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
@@ -690,11 +692,7 @@ def render_alerts_panel():
             new_badge = "🆕 NEW" if age_sec < 60 else ""
             
             if link:
-                # Link is clickable but text appears normal (no blue/underline)
-                st.markdown(
-                    f'- {new_badge} <a href="{link}" target="_blank" style="color: inherit; text-decoration: none; cursor: pointer;">{title}</a>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f"- {new_badge} [{title}]({link})")
             else:
                 st.markdown(f"- {new_badge} {title}")
 
@@ -1504,22 +1502,22 @@ with feed_box:
         st.info("📰 Loading news... (first fetch usually takes a few seconds)")
     else:
         for a in news[:80]:
-            score = a.get('_score', 0)
-            # Determine background color based on score
+            score = int(a.get('_score', 0))
+            # Determine card color based on score
             if score >= 60:
-                bg_color = "rgba(220, 80, 80, 0.15)"  # Soft red for high score
+                card_class = "card-high"
             elif score >= 40:
-                bg_color = "rgba(220, 180, 80, 0.15)"  # Soft yellow for medium score
+                card_class = "card-medium"
             else:
-                bg_color = "rgba(20, 20, 30, 0.92)"    # Default dark
+                card_class = "card"
             
             st.markdown(
                 f"""
-<div class="card" style="background: {bg_color};">
+<div class="{card_class}">
   <div class="meta">
     <span class="source">{a.get('source','')}</span>
     <span>{time_ago(a.get('_ts', 0.0))} ago</span>
-    <span class="badge">score={a.get('_score', 0)}</span>
+    <span class="badge">score={score}</span>
     <span class="badge">kw={a.get('_kw_hits', 0)}</span>
     <span class="badge">noise={a.get('_noise_hits', 0)}</span>
     <span class="badge">{a.get('_domain','')}</span>
