@@ -784,8 +784,13 @@ def render_alerts_panel():
             # Replace "NEW:" with time label
             msg_updated = msg.replace("NEW:", time_label)
             
-            # Color background based on score
-            bg_color = "rgba(255, 0, 0, 0.1)" if score >= 60 else "transparent"
+            # Color background based on score: red >= 12, yellow > 8, transparent otherwise
+            if score >= 12:
+                bg_color = "rgba(255, 0, 0, 0.2)"  # Red semitransparent
+            elif score > 8:
+                bg_color = "rgba(255, 255, 0, 0.2)"  # Yellow semitransparent
+            else:
+                bg_color = "transparent"
             
             if link:
                 # Link is invisible but clickable - entire text is the link
@@ -1609,8 +1614,13 @@ with feed_box:
     else:
         for a in news[:80]:
             score = int(a.get('_score', 0))
-            # Red semi-transparent background for high-score alerts
-            bg_style = "background-color: rgba(255, 0, 0, 0.1);" if score >= 60 else ""
+            # Color background based on score: red >= 12, yellow > 8, transparent otherwise
+            if score >= 12:
+                bg_style = "background-color: rgba(255, 0, 0, 0.2);"  # Red semitransparent
+            elif score > 8:
+                bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent
+            else:
+                bg_style = ""
             st.markdown(
                 f"""
 <div class="card" style="{bg_style}">
