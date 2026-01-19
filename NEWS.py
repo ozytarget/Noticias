@@ -193,11 +193,16 @@ def dedupe(items: list[dict]) -> list[dict]:
     out = []
     for a in items:
         link = (a.get("link") or "").strip()
+        
+        # Normalize URL (strip tracking params)
         if link:
-            key = ("link", link)
+            normalized_link = _normalize_url(link)
+            key = ("link", normalized_link)
         else:
+            # Fallback: use title
             t = re.sub(r"\s+", " ", (a.get("title") or "").strip().lower())
             key = ("title", t[:240])
+        
         if key in seen:
             continue
         seen.add(key)
@@ -211,6 +216,22 @@ def _extract_domain(url: str) -> str:
         return host.replace("www.", "")
     except Exception:
         return ""
+
+
+def _normalize_url(url: str) -> str:
+    """
+    Strips tracking params and query strings to get canonical URL.
+    Handles: utm_*, fbclid, gclid, msclkid, etc.
+    """
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        # Keep only scheme + netloc + path (drop query/fragment/params)
+        canonical = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        return canonical.lower()
+    except Exception:
+        return url.lower()
 
 
 def _domain_in(domain: str, patterns: list[str]) -> bool:
@@ -314,7 +335,14 @@ def score_bloomberg(item: dict) -> dict:
 
 
 def make_item_hash(title: str, link: str) -> str:
-    base = (title or "").strip().lower() + "|" + (link or "").strip().lower()
+    """
+    DB hash for news_items. Uses normalized URL to match across tracking params.
+    """
+    if link:
+        normalized_link = _normalize_url(link)
+        base = (title or "").strip().lower() + "|" + normalized_link
+    else:
+        base = (title or "").strip().lower()
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -554,13 +582,21 @@ def db_save_digest(content: dict, window_hours: int):
 
 def _alert_hash(item: dict) -> str:
     """
-    Stable ID for an alert. Prefer link; fallback title+domain+ts bucket.
+    Stable ID for an alert. Uses normalized URL or title+domain.
+    Strips tracking params to match articles across different URLs.
     """
-    link = (item.get("link") or "").strip().lower()
+    link = (item.get("link") or "").strip()
     title = (item.get("title") or "").strip().lower()
     dom = (item.get("_domain") or item.get("domain") or "").strip().lower()
-    ts = int(float(item.get("_ts") or 0.0) // 60)  # bucket by minute to reduce collisions
-    base = link if link else f"{title}|{dom}|{ts}"
+    
+    if link:
+        # Normalize URL to strip tracking params
+        normalized_link = _normalize_url(link)
+        base = normalized_link
+    else:
+        # Fallback: title + domain (no timestamp bucket - too fragile)
+        base = f"{title}|{dom}"
+    
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
