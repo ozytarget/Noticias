@@ -1383,6 +1383,7 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
 # =========================
 # PIPELINE (cached)
 # =========================
+feed_box = st.container()
 
 @st.cache_data(ttl=AUTO_REFRESH_SECONDS, show_spinner=False)
 def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, cache_buster: int = 0) -> list[dict]:
@@ -1417,6 +1418,92 @@ db_init_alerts()
 # SETTINGS + REFRESH
 # =========================
 st.markdown("---")
+
+# =========================
+# HOT TOPICS — keyword presets (CORE + selectable topics)
+# =========================
+CORE_KEYWORDS = [
+    "SPX", "FOMC", "Treasury", "yields", "inflation",
+    "options", "gamma", "EARNINGS", "ENERGY", "liquidity",
+]
+
+HOT_TOPICS = {
+    "TRUMP / Tariffs": [
+        "TRUMP", "tariff", "tariffs", "trade war", "executive order",
+        "White House", "election", "sanctions", "border", "immigration",
+        "debt ceiling", "shutdown",
+    ],
+    "China": [
+        "China", "Beijing", "Xi", "PBOC", "yuan", "CNY", "USDCNH",
+        "Taiwan", "export controls", "chip", "semiconductors",
+    ],
+    "Geopolitics": [
+        "Ukraine", "Russia", "NATO", "Iran", "Israel", "Gaza",
+        "Middle East", "missile", "attack", "ceasefire", "sanctions",
+    ],
+    "Fed Speakers": [
+        "Powell", "Fed speaker", "Fed officials", "Fed governor",
+        "Williams", "Waller", "Bowman", "Bostic", "Daly",
+        "Kashkari", "Mester", "Brainard", "dot plot", "minutes",
+    ],
+    "Oil": [
+        "oil", "WTI", "Brent", "OPEC", "OPEC+", "crude",
+        "SPR", "refinery", "gasoline", "diesel", "pipeline",
+    ],
+}
+
+# Persist selection across reruns
+if "hot_topics_selected" not in st.session_state:
+    st.session_state["hot_topics_selected"] = []
+
+st.markdown(
+    """
+    <div style="margin: 6px 0 8px 0; padding: 10px; border-radius: 8px;
+                border: 1px solid rgba(121,192,255,.25); background: rgba(20,20,30,.55);">
+      <div style="font-weight:800; color:#79c0ff; font-family:'Courier New', monospace;">
+        HOT TOPICS
+      </div>
+      <div style="color:#8b949e; font-size:12px; margin-top:4px;">
+        CORE siempre activo. Selecciona temas del día para capturar drivers tipo TRUMP/tariffs sin editar a mano.
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+selected_topics = st.multiselect(
+    "Select HOT TOPICS (optional)",
+    options=list(HOT_TOPICS.keys()),
+    default=st.session_state["hot_topics_selected"],
+    key="hot_topics_multiselect",
+)
+
+st.session_state["hot_topics_selected"] = selected_topics
+
+# Build auto keywords = CORE + selected topic keywords (dedup, keep order)
+auto_keywords = list(CORE_KEYWORDS)
+seen = {k.strip().lower() for k in auto_keywords if k.strip()}
+
+for t in selected_topics:
+    for kw in HOT_TOPICS.get(t, []):
+        k = (kw or "").strip()
+        if not k:
+            continue
+        lk = k.lower()
+        if lk in seen:
+            continue
+        seen.add(lk)
+        auto_keywords.append(k)
+
+# Store the computed keywords so the text input reflects them
+st.session_state["auto_keywords"] = auto_keywords
+
+
+# =========================
+# KEYWORDS INPUT (comma-separated)
+# - Default: generated from CORE + selected HOT TOPICS
+# - User can still manually edit; manual overrides become the active keywords
+# =========================
 st.markdown(
     """<div style="background-color: rgba(255, 255, 0, 0.2); padding: 10px; border-radius: 6px; margin-bottom: 10px;">""",
     unsafe_allow_html=True,
@@ -1427,8 +1514,16 @@ combined_input = st.text_input(
     key="combined_keywords_input"
 )
 st.markdown("""</div>""", unsafe_allow_html=True)
+
 manual_keywords = [k.strip() for k in combined_input.split(",") if k.strip()]
+
+# manual_keywords are the ones actually used downstream
 st.session_state["auto_keywords"] = manual_keywords
+
+# Small status line
+st.caption(
+    f"CORE={len(CORE_KEYWORDS)} | HOT TOPICS selected={len(selected_topics)} | active keywords={len(manual_keywords)}"
+)
 
 # ⚡ Filter Settings (hidden, using defaults)
 min_kw_hits = 1  # Default: Min KW = 1
@@ -1547,12 +1642,6 @@ if st.session_state.get("custom_ai_result"):
     st.markdown("---")
     st.markdown("### 🤖 pro-analizer")
     st.text(st.session_state["custom_ai_result"])
-
-
-# =========================
-# FEED CONTAINER (para render)
-# =========================
-feed_box = st.container()
 
 
 # =========================
