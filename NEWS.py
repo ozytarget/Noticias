@@ -1456,21 +1456,6 @@ HOT_TOPICS = {
 if "hot_topics_selected" not in st.session_state:
     st.session_state["hot_topics_selected"] = []
 
-st.markdown(
-    """
-    <div style="margin: 6px 0 8px 0; padding: 10px; border-radius: 8px;
-                border: 1px solid rgba(121,192,255,.25); background: rgba(20,20,30,.55);">
-      <div style="font-weight:800; color:#79c0ff; font-family:'Courier New', monospace;">
-        HOT TOPICS
-      </div>
-      <div style="color:#8b949e; font-size:12px; margin-top:4px;">
-        CORE siempre activo. Selecciona temas del día para capturar drivers tipo TRUMP/tariffs sin editar a mano.
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
 selected_topics = st.multiselect(
     "Select HOT TOPICS (optional)",
     options=list(HOT_TOPICS.keys()),
