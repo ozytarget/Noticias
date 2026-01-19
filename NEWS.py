@@ -1516,7 +1516,7 @@ st.markdown(
 # Controlled input: always shows session_state value, updates both on user edit and button press
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
-    value=st.session_state.get("combined_keywords_input", ""),
+    value=st.session_state.get("combined_keywords_input", ", ".join(DEFAULT_KEYWORDS)),
     key="combined_keywords_input",
 )
 st.markdown("""</div>""", unsafe_allow_html=True)
