@@ -1421,6 +1421,8 @@ st.markdown("---")
 
 # =========================
 # HOT TOPICS — keyword presets (CORE + selectable topics)
+# - No pisa tu input automáticamente
+# - Tú decides cuándo aplicar (Apply) o resetear (Reset)
 # =========================
 CORE_KEYWORDS = [
     "SPX", "FOMC", "Treasury", "yields", "inflation",
@@ -1444,7 +1446,7 @@ HOT_TOPICS = {
     "Fed Speakers": [
         "Powell", "Fed speaker", "Fed officials", "Fed governor",
         "Williams", "Waller", "Bowman", "Bostic", "Daly",
-        "Kashkari", "Mester", "Brainard", "dot plot", "minutes",
+        "Kashkari", "Mester", "dot plot", "minutes",
     ],
     "Oil": [
         "oil", "WTI", "Brent", "OPEC", "OPEC+", "crude",
@@ -1455,6 +1457,27 @@ HOT_TOPICS = {
 # Persist selection across reruns
 if "hot_topics_selected" not in st.session_state:
     st.session_state["hot_topics_selected"] = []
+if "keywords_mode" not in st.session_state:
+    st.session_state["keywords_mode"] = "Manual (input manda)"  # default
+if "combined_keywords_input" not in st.session_state:
+    # seed input once with DEFAULT_KEYWORDS (your working baseline)
+    st.session_state["combined_keywords_input"] = ", ".join(st.session_state.get("auto_keywords", DEFAULT_KEYWORDS))
+
+st.markdown(
+    """
+    <div style="margin: 6px 0 8px 0; padding: 10px; border-radius: 8px;
+                border: 1px solid rgba(121,192,255,.25); background: rgba(20,20,30,.55);">
+      <div style="font-weight:800; color:#79c0ff; font-family:'Courier New', monospace;">
+        HOT TOPICS
+      </div>
+      <div style="color:#8b949e; font-size:12px; margin-top:4px;">
+        CORE fijo + temas del día (TRUMP/tariffs, China, geo, Fed speakers, oil). 
+        No te pisa el input: tú aplicas cuando quieras.
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 selected_topics = st.multiselect(
     "Select HOT TOPICS (optional)",
@@ -1462,12 +1485,11 @@ selected_topics = st.multiselect(
     default=st.session_state["hot_topics_selected"],
     key="hot_topics_multiselect",
 )
-
 st.session_state["hot_topics_selected"] = selected_topics
 
-# Build auto keywords = CORE + selected topic keywords (dedup, keep order)
-auto_keywords = list(CORE_KEYWORDS)
-seen = {k.strip().lower() for k in auto_keywords if k.strip()}
+# Build preset = CORE + selected topics (dedup, keep order)
+preset_keywords = list(CORE_KEYWORDS)
+seen = {k.strip().lower() for k in preset_keywords if k.strip()}
 
 for t in selected_topics:
     for kw in HOT_TOPICS.get(t, []):
@@ -1478,10 +1500,23 @@ for t in selected_topics:
         if lk in seen:
             continue
         seen.add(lk)
-        auto_keywords.append(k)
+        preset_keywords.append(k)
 
-# Store the computed keywords so the text input reflects them
-st.session_state["auto_keywords"] = auto_keywords
+col_hot1, col_hot2, col_hot3 = st.columns([1, 1, 2])
+with col_hot1:
+    apply_hot = st.button("✅ Apply HOT TOPICS → Input", use_container_width=True)
+with col_hot2:
+    reset_core = st.button("↩️ Reset to CORE", use_container_width=True)
+with col_hot3:
+    st.caption(f"CORE={len(CORE_KEYWORDS)} | selected topics={len(selected_topics)} | preset size={len(preset_keywords)}")
+
+if apply_hot:
+    st.session_state["combined_keywords_input"] = ", ".join(preset_keywords)
+    st.session_state["auto_keywords"] = preset_keywords
+
+if reset_core:
+    st.session_state["combined_keywords_input"] = ", ".join(CORE_KEYWORDS)
+    st.session_state["auto_keywords"] = CORE_KEYWORDS
 
 
 # =========================
@@ -1495,7 +1530,7 @@ st.markdown(
 )
 combined_input = st.text_input(
     "Enter keywords (comma-separated)",
-    value=", ".join(st.session_state["auto_keywords"]),
+    value=st.session_state["combined_keywords_input"],
     key="combined_keywords_input"
 )
 st.markdown("""</div>""", unsafe_allow_html=True)
