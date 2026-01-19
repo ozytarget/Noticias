@@ -666,7 +666,7 @@ def alert_on_new_items(items: list[dict], max_alerts_per_run: int = 6):
             "msg": msg,
             "link": link,
         })
-        st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:30]
+        st.session_state["alerts_feed"] = st.session_state["alerts_feed"][:800]
 
         fired += 1
 
@@ -676,13 +676,18 @@ def render_alerts_panel():
     Optional UI panel (last alerts). Call where you want in RENDER.
     NEW badge disappears after 60 seconds.
     Only link is clickable - no source shown.
+    Stores up to 800 alerts, displays 12 with scrolldown for the rest.
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
         return
     now_ts = time.time()
-    with st.expander("🚨 Alerts (new headlines)", expanded=False):
-        for a in feed[:12]:
+    
+    with st.expander(f"🚨 Alerts (new headlines) — {len(feed)} total", expanded=False):
+        # Create scrollable container with HTML/CSS
+        alerts_html = '<div style="height: 400px; overflow-y: auto; border: 1px solid rgba(121,192,255,.2); padding: 12px; border-radius: 6px; background: rgba(20, 20, 30, 0.5);">'
+        
+        for a in feed[:800]:  # Show all, but let scroll handle display
             title = a.get("msg", "").replace("[ozytarget.com] ", "").strip()
             link = a.get("link", "")
             alert_ts = a.get("ts", 0)
@@ -692,9 +697,12 @@ def render_alerts_panel():
             new_badge = "🆕 NEW" if age_sec < 60 else ""
             
             if link:
-                st.markdown(f"- {new_badge} [{title}]({link})")
+                alerts_html += f'<div style="margin: 6px 0;"><a href="{link}" target="_blank" style="color: #79c0ff; text-decoration: none;">- {new_badge} {title}</a></div>'
             else:
-                st.markdown(f"- {new_badge} {title}")
+                alerts_html += f'<div style="margin: 6px 0; color: #e6edf3;">- {new_badge} {title}</div>'
+        
+        alerts_html += '</div>'
+        st.markdown(alerts_html, unsafe_allow_html=True)
 
 
 # =========================
