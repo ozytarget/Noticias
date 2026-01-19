@@ -1621,21 +1621,21 @@ with feed_box:
         for a in news[:80]:
             score = int(a.get('_score', 0))
             
-            # Check if article contains DEFAULT_KEYWORDS (line 27)
+            # Check if article contains user's keywords (from keyword input)
             title = (a.get('title', '')).lower()
             summary = (a.get('summary', '')).lower()
             blob = f"{title} {summary}"
-            default_kw_hits = count_hits(blob, st.session_state.get("auto_keywords", DEFAULT_KEYWORDS))
+            user_kw_hits = count_hits(blob, st.session_state.get("auto_keywords", []))
             
-            # Color background: DEFAULT_KEYWORDS always yellow, red >= 12, yellow > 8, transparent otherwise
-            if default_kw_hits > 0:
-                bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent for DEFAULT_KEYWORDS
-            elif score >= 12:
+            # Color priority: score >= 12 (red) > score > 8 (yellow) > user keywords (yellow) > none (transparent)
+            if score >= 12:
                 bg_style = "background-color: rgba(255, 0, 0, 0.2);"  # Red semitransparent
             elif score > 8:
                 bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent
+            elif user_kw_hits > 0:
+                bg_style = "background-color: rgba(255, 255, 0, 0.2);"  # Yellow semitransparent for user keywords
             else:
-                bg_style = ""
+                bg_style = ""  # Transparent
             st.markdown(
                 f"""
 <div class="card" style="{bg_style}">
