@@ -1233,7 +1233,7 @@ INPUT DATA:
 {custom_input}
 """.strip()
     
-    with st.spinner("🧠 Analyzing your input with AI..."):
+    with st.spinner("⚡ ANALYZER BY OZYTARGET.COM..."):
         try:
             custom_result = gemini_generate_text(custom_prompt, debug=True)
             st.session_state["custom_ai_result"] = custom_result
