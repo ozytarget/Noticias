@@ -1,7 +1,7 @@
 🚀 RAILWAY - CONFIGURACIÓN DE VARIABLES
 ========================================
 
-Railway detectó que necesitas establecer estas variables de entorno:
+Railway detectó que necesitas establecer esta variable de entorno:
 
 1️⃣ GEMINI_API_KEY (REQUERIDO)
    └─ Obtén tu clave en: https://makersuite.google.com/app/apikey
@@ -12,25 +12,13 @@ Railway detectó que necesitas establecer estas variables de entorno:
       • Copia la clave
       • Pégala en Railway → Settings → Variables → GEMINI_API_KEY
 
-2️⃣ BING_NEWS_API_KEY (OPCIONAL)
-   └─ Si deseas usar Bing News como fuente alternativa
-   └─ Obtén tu clave en: https://www.microsoft.com/en-us/bing/apis/bing-news-search-api
-   └─ Pasos:
-      • Ve a https://www.microsoft.com/en-us/bing/apis/bing-news-search-api
-      • Haz clic en "Get free API key"
-      • Copia la clave
-      • Pégala en Railway → Settings → Variables → BING_NEWS_API_KEY
-
 📋 INSTRUCCIONES EN RAILWAY:
 ============================
 1. Ve a https://railway.app
 2. Abre tu proyecto "OZYTARGET NEWS"
 3. Ve a "Settings" → "Variables"
-4. Agrega cada variable:
+4. Agrega la variable:
    • Name: GEMINI_API_KEY
-     Value: [tu_clave_aqui]
-   
-   • Name: BING_NEWS_API_KEY (opcional)
      Value: [tu_clave_aqui]
 
 5. Guarda los cambios

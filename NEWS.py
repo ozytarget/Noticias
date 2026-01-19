@@ -27,7 +27,6 @@ AI_CONTEXT_DAYS = 30
 DEFAULT_KEYWORDS = ["SPY", "FOMC", "Treasury", "yields", "inflation", "options", "gamma", "liquidity"]
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
-BING_NEWS_ENDPOINT = "https://api.bing.microsoft.com/v7.0/news/search"
 
 HEADERS = {
     "User-Agent": (
@@ -36,7 +35,6 @@ HEADERS = {
     )
 }
 
-BING_API_KEY = os.getenv("BING_NEWS_API_KEY", "").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
@@ -1100,61 +1098,6 @@ def fetch_google_news(keywords: list[str]) -> list[dict]:
     return items
 
 
-def fetch_bing_news(keywords: list[str]) -> list[dict]:
-    if not BING_API_KEY:
-        return []
-
-    base = " OR ".join(keywords) if keywords else "SPY"
-
-    # Bing query: safest is "NOT word" repeated.
-    # Avoid multi-word negatives inside NOT() because it can reduce/kill results.
-    negatives_clean = []
-    for w in NEGATIVE_KEYWORDS:
-        w = (w or "").strip()
-        if not w:
-            continue
-        # Keep only single tokens (Bing query safer). Multi-word negatives are skipped here.
-        if " " in w:
-            continue
-        negatives_clean.append(w)
-
-    neg_part = " ".join([f"NOT {w}" for w in negatives_clean])
-    query = f"({base}) {neg_part}".strip()
-
-    freshness = "Day" if MAX_ARTICLE_AGE_HOURS <= 24 else "Week"
-    params = {
-        "q": query,
-        "mkt": "en-US",
-        "count": 25,
-        "sortBy": "Date",
-        "freshness": freshness,
-        "safeSearch": "Off",
-        "textFormat": "Raw",
-    }
-
-    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY, **HEADERS}
-    r = requests.get(BING_NEWS_ENDPOINT, params=params, headers=headers, timeout=12)
-    r.raise_for_status()
-    data = r.json()
-
-    items = []
-    for v in data.get("value", [])[:25]:
-        title = (v.get("name") or "").strip()
-        link = (v.get("url") or "").strip()
-        published = (v.get("datePublished") or "").strip()
-        ts = safe_parse_time(published)
-
-        items.append({
-            "source": "OZYTARGET.COM",
-            "title": title,
-            "link": link,
-            "time": published,
-            "summary": "",
-            "_ts": ts,
-        })
-    return items
-
-
 # =========================
 # PIPELINE (cached)
 # =========================
@@ -1170,11 +1113,6 @@ def fetch_all_sources_cached(keywords: list[str], min_kw: int, max_noise: int, c
 
     try:
         items.extend(fetch_google_news(keywords))
-    except Exception:
-        pass
-
-    try:
-        items.extend(fetch_bing_news(keywords))
     except Exception:
         pass
 
