@@ -194,14 +194,17 @@ def dedupe(items: list[dict]) -> list[dict]:
     for a in items:
         link = (a.get("link") or "").strip()
         
-        # Normalize URL (strip tracking params)
+        # Normalize URL (strip tracking params, www, scheme, case)
         if link:
             normalized_link = _normalize_url(link)
             key = ("link", normalized_link)
+            # Store canonical link in item for downstream consistency
+            a["_canonical_link"] = normalized_link
         else:
             # Fallback: use title
             t = re.sub(r"\s+", " ", (a.get("title") or "").strip().lower())
             key = ("title", t[:240])
+            a["_canonical_link"] = ""
         
         if key in seen:
             continue
@@ -222,14 +225,28 @@ def _normalize_url(url: str) -> str:
     """
     Strips tracking params and query strings to get canonical URL.
     Handles: utm_*, fbclid, gclid, msclkid, etc.
+    Also normalizes www, ensures scheme, and lowercases.
     """
     if not url:
         return ""
     try:
+        url = url.strip().lower()
         parsed = urlparse(url)
+        
+        # Default to https if missing
+        scheme = parsed.scheme or "https"
+        
+        # Normalize netloc: remove www., lowercase
+        netloc = (parsed.netloc or "").lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        
+        # Ensure path is not empty
+        path = (parsed.path or "/").lower()
+        
         # Keep only scheme + netloc + path (drop query/fragment/params)
-        canonical = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        return canonical.lower()
+        canonical = f"{scheme}://{netloc}{path}"
+        return canonical
     except Exception:
         return url.lower()
 
@@ -334,15 +351,21 @@ def score_bloomberg(item: dict) -> dict:
     return out
 
 
-def make_item_hash(title: str, link: str) -> str:
+def make_item_hash(title: str, link: str, canonical_link: str = "") -> str:
     """
-    DB hash for news_items. Uses normalized URL to match across tracking params.
+    DB hash for news_items. Uses canonical URL + title for stability.
+    If canonical_link provided (from dedupe), use it; else normalize on-the-fly.
     """
-    if link:
+    # Prefer pre-computed canonical link (from dedupe)
+    if canonical_link:
+        normalized_link = canonical_link
+    elif link:
         normalized_link = _normalize_url(link)
-        base = (title or "").strip().lower() + "|" + normalized_link
     else:
-        base = (title or "").strip().lower()
+        normalized_link = ""
+    
+    # Hash = title | canonical_link (canonical first for consistency with alerts)
+    base = (title or "").strip().lower() + "|" + normalized_link
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -453,7 +476,8 @@ def db_upsert_many(items: list[dict]):
     for a in items:
         title = (a.get("title") or "").strip()
         link = (a.get("link") or "").strip()
-        item_hash = make_item_hash(title, link)
+        canonical_link = (a.get("_canonical_link") or "").strip()
+        item_hash = make_item_hash(title, link, canonical_link=canonical_link)
 
         rows.append((
             item_hash,
@@ -582,20 +606,25 @@ def db_save_digest(content: dict, window_hours: int):
 
 def _alert_hash(item: dict) -> str:
     """
-    Stable ID for an alert. Uses normalized URL or title+domain.
-    Strips tracking params to match articles across different URLs.
+    Stable ID for an alert. Uses canonical URL + title (same as make_item_hash).
+    Ensures consistency with DB hashes.
     """
-    link = (item.get("link") or "").strip()
+    # Prefer pre-computed canonical link (from dedupe)
+    canonical_link = (item.get("_canonical_link") or "").strip()
+    if not canonical_link:
+        link = (item.get("link") or "").strip()
+        if link:
+            canonical_link = _normalize_url(link)
+    
     title = (item.get("title") or "").strip().lower()
     dom = (item.get("_domain") or item.get("domain") or "").strip().lower()
     
-    if link:
-        # Normalize URL to strip tracking params
-        normalized_link = _normalize_url(link)
-        base = normalized_link
+    if canonical_link:
+        # Use same formula as make_item_hash for 100% consistency
+        base = title + "|" + canonical_link
     else:
-        # Fallback: title + domain (no timestamp bucket - too fragile)
-        base = f"{title}|{dom}"
+        # Fallback: title + domain only
+        base = title + "|" + dom
     
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
