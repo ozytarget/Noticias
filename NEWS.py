@@ -16,7 +16,7 @@ from streamlit_autorefresh import st_autorefresh
 # =========================
 # CONFIG
 # =========================
-AUTO_REFRESH_SECONDS = 35
+AUTO_REFRESH_SECONDS = 30
 MAX_ARTICLE_AGE_HOURS = 24
 
 RETENTION_DAYS = 30
@@ -1551,20 +1551,30 @@ if st.session_state.get("custom_ai_result"):
 
 
 # =========================
-# AUTO FETCH + STORE
+# AUTO FETCH + STORE (30s real + cache busting en AUTO)
 # =========================
 now_ts = time.time()
 should_fetch = force_refresh or ((now_ts - st.session_state.get("last_fetch_ts", 0.0)) >= AUTO_REFRESH_SECONDS)
 
+scan_status = st.empty()  # status estable (sin flicker de spinner)
+
 if should_fetch:
-    with st.spinner("Auto-fetching latest news..."):
-        buster = int(now_ts) if force_refresh else 0
+    scan_status.caption("Scanning sources… (UI stable)")
+    try:
+        # ✅ CLAVE: auto-refresh TAMBIÉN debe bustear cache.
+        # Usamos bucket por ventana de AUTO_REFRESH_SECONDS para no spamear.
+        # - Manual: buster cambia cada click (int(now_ts))
+        # - Auto: buster cambia cada 30s (bucket)
+        bucket = int(now_ts // AUTO_REFRESH_SECONDS)
+        buster = int(now_ts) if force_refresh else bucket
+
         fresh = fetch_all_sources_cached(
             keywords=manual_keywords if manual_keywords else DEFAULT_KEYWORDS,
             min_kw=min_kw_hits,
             max_noise=max_noise_hits,
             cache_buster=buster,
         )
+
         st.session_state["latest_news"] = fresh
         st.session_state["last_fetch_ts"] = now_ts
 
@@ -1572,7 +1582,13 @@ if should_fetch:
             db_upsert_many(fresh)
             alert_on_new_items(fresh, max_alerts_per_run=6)
         except Exception as e:
-            st.warning(f"DB write error: {e}")
+            scan_status.warning(f"DB write error: {type(e).__name__}: {str(e)[:160]}")
+
+        scan_status.markdown(f"**✅ Updated:** {len(fresh)} headlines")
+    except Exception as e:
+        scan_status.error(f"Scan error: {type(e).__name__}: {str(e)[:180]}")
+else:
+    scan_status.caption("Idle (showing last headlines)")
 
 
 # =========================
