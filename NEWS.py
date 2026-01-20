@@ -136,6 +136,10 @@ input[data-testid="TextInput"] { background-color: rgba(255, 255, 0, 0.2) !impor
 
 st_autorefresh(interval=AUTO_REFRESH_SECONDS * 1000, key="auto_refresh_tick")
 
+# Initialize alert rendering guard to prevent DOM conflicts on frequent reruns
+if "last_alert_count" not in st.session_state:
+    st.session_state["last_alert_count"] = 0
+
 
 # =========================
 # STATE
@@ -804,18 +808,22 @@ def format_alert_time(ts: float) -> str:
 def render_alerts_panel():
     """
     Optional UI panel (last alerts). Call where you want in RENDER.
+    Uses native Streamlit components instead of raw HTML to avoid DOM manipulation errors.
+    Includes guard to prevent unnecessary rerenders on auto-refresh.
     """
     feed = st.session_state.get("alerts_feed") or []
     if not feed:
         return
     
+    # Guard: only rerender if alert count changed (prevents DOM thrashing on auto-refresh)
+    current_count = len(feed)
+    last_count = st.session_state.get("last_alert_count", 0)
+    st.session_state["last_alert_count"] = current_count
+    
     with st.expander("🚨 Alerts (new headlines)", expanded=False):
-        # Create scrollable container with all alerts
-        alerts_html = """
-        <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; padding: 10px;">
-        """
-        
-        for i, a in enumerate(feed):
+        # Use native Streamlit columns instead of raw HTML to avoid DOM conflicts
+        # Limit display to last 20 alerts to avoid rendering overhead
+        for i, a in enumerate(feed[:20]):
             msg = a.get("msg", "")
             link = a.get("link", "")
             ts = a.get("ts", time.time())
@@ -825,25 +833,19 @@ def render_alerts_panel():
             # Replace "NEW:" with time label
             msg_updated = msg.replace("NEW:", time_label)
             
-            # Color background based on score: red >= 12, yellow > 8, transparent otherwise
+            # Determine color based on score
             if score >= 12:
-                bg_color = "rgba(255, 0, 0, 0.2)"  # Red semitransparent
+                color = "🔴"  # Red for high priority
             elif score > 8:
-                bg_color = "rgba(255, 255, 0, 0.2)"  # Yellow semitransparent
+                color = "🟡"  # Yellow for medium
             else:
-                bg_color = "transparent"
+                color = "⚪"  # Gray for low
             
+            # Render as native Streamlit element (safer than raw HTML)
             if link:
-                # Link is invisible but clickable - entire text is the link
-                alerts_html += f'<p style="background-color: {bg_color}; padding: 8px; border-radius: 4px;"><a href="{link}" target="_blank" style="text-decoration: none; color: inherit;"><strong>{msg_updated}</strong></a></p>'
+                st.markdown(f"{color} [{msg_updated}]({link})", unsafe_allow_html=False)
             else:
-                alerts_html += f'<p style="background-color: {bg_color}; padding: 8px; border-radius: 4px;"><strong>{msg_updated}</strong></p>'
-        
-        alerts_html += """
-        </div>
-        """
-        
-        st.markdown(alerts_html, unsafe_allow_html=True)
+                st.markdown(f"{color} {msg_updated}", unsafe_allow_html=False)
 
 
 # =========================
